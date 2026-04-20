@@ -1,6 +1,6 @@
 # Pinta Codex
 
-Codex security monitoring plugin. Converts Codex hook events into OTLP spans and ships them to a Pinta trace endpoint. Mirrors `pinta-cc` — same OTLP schema, same fail-close policy, same retry queue — reshaped for Codex's current plugin surface.
+Codex security monitoring plugin. Converts Codex hook events into OTLP spans and ships them to a Pinta trace endpoint. Mirrors [`pinta-cc`](https://github.com/awarecorp/pinta-cc) — same OTLP schema, same fail-close policy, same retry queue — reshaped for Codex's current plugin surface.
 
 > **For end users:** see [`docs/installation-guide.md`](./docs/installation-guide.md).
 > **For how this differs from `pinta-cc`:** see [`docs/codex-vs-claude-code.md`](./docs/codex-vs-claude-code.md).
@@ -9,6 +9,8 @@ Codex security monitoring plugin. Converts Codex hook events into OTLP spans and
 ## Quick start
 
 ```bash
+git clone https://github.com/awarecorp/pinta-codex.git
+cd pinta-codex
 npm install
 npm run setup      # interactive: build + env + config.toml + hooks.json + identity check
 codex              # hooks fire immediately
@@ -137,9 +139,12 @@ npm run test:redact
 ## Repo layout
 
 ```text
-plugins/pinta-codex/
+pinta-codex/
 ├── .codex-plugin/plugin.json   # plugin manifest (forward-compatible with future auto-discovery)
+├── .agents/plugins/marketplace.json   # local marketplace pointer
+├── .github/workflows/          # CI (PR validation + dist/ rebuild on main)
 ├── hooks.json                  # template using ${CODEX_PLUGIN_ROOT} — resolved by install-hooks
+├── LICENSE                     # PolyForm Noncommercial 1.0.0
 ├── docs/
 │   ├── installation-guide.md   # end-user install walkthrough
 │   └── codex-vs-claude-code.md # UX differences vs pinta-cc
@@ -158,3 +163,7 @@ plugins/pinta-codex/
 │   └── test-redact.ts          # redaction unit tests
 └── .plugin-data/               # created at runtime (trace.json, failed-spans.jsonl)
 ```
+
+## License
+
+PolyForm Noncommercial 1.0.0. See [`LICENSE`](./LICENSE).

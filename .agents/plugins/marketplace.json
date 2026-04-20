@@ -1,0 +1,20 @@
+{
+  "name": "pinta-ai",
+  "interface": {
+    "displayName": "Pinta AI Plugins"
+  },
+  "plugins": [
+    {
+      "name": "pinta-codex",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

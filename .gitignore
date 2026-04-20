@@ -1,0 +1,14 @@
+node_modules/
+.plugin-data/
+tools/.data/
+
+.claude/
+.envrc
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
+
+docs

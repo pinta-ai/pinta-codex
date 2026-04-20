@@ -9,7 +9,7 @@
   },
   "homepage": "https://pinta.sh",
   "repository": "https://github.com/awarecorp/pinta-codex",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "SEE LICENSE IN ../LICENSE",
   "keywords": [
     "codex",
     "security",

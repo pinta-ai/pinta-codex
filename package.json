@@ -3,12 +3,11 @@
   "version": "1.0.0",
   "description": "Codex security monitoring plugin",
   "main": "dist/index.js",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "SEE LICENSE IN ./LICENSE",
   "author": "Pinta AI (https://pinta.sh)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/awarecorp/pinta-codex.git",
-    "directory": "plugins/pinta-codex"
+    "url": "https://github.com/awarecorp/pinta-codex.git"
   },
   "homepage": "https://github.com/awarecorp/pinta-codex",
   "bugs": {
