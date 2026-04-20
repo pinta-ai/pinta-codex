@@ -1,0 +1,41 @@
+{
+  "name": "pinta-codex",
+  "version": "1.0.0",
+  "description": "Security monitoring plugin that forwards Codex hook events to a Pinta trace endpoint",
+  "author": {
+    "name": "Pinta AI",
+    "email": "support@pinta.sh",
+    "url": "https://pinta.sh"
+  },
+  "homepage": "https://pinta.sh",
+  "repository": "https://github.com/awarecorp/pinta-codex",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "keywords": [
+    "codex",
+    "security",
+    "observability",
+    "otlp",
+    "pinta"
+  ],
+  "hooks": "./hooks.json",
+  "interface": {
+    "displayName": "Pinta Codex",
+    "shortDescription": "Forward Codex hook events to Pinta",
+    "longDescription": "Captures Codex hook events, resolves Pinta identity, converts them to OTLP spans, and sends them to a trace endpoint with retry queueing.",
+    "developerName": "Pinta AI",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://pinta.sh",
+    "privacyPolicyURL": "https://pinta.sh",
+    "termsOfServiceURL": "https://pinta.sh",
+    "defaultPrompt": [
+      "Review code with Pinta telemetry enabled.",
+      "Send Codex tool activity to my Pinta endpoint.",
+      "Trace this coding session for security review."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "pinta-codex",
+  "version": "1.0.0",
+  "description": "Codex security monitoring plugin",
+  "main": "dist/index.js",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "author": "Pinta AI (https://pinta.sh)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awarecorp/pinta-codex.git",
+    "directory": "plugins/pinta-codex"
+  },
+  "homepage": "https://github.com/awarecorp/pinta-codex",
+  "bugs": {
+    "url": "https://github.com/awarecorp/pinta-codex/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "setup": "npx tsx tools/setup.ts",
+    "doctor": "npx tsx tools/doctor.ts",
+    "install-hooks": "npx tsx tools/install-hooks.ts",
+    "uninstall-hooks": "npx tsx tools/uninstall-hooks.ts",
+    "mock-server": "npx tsx tools/mock-server.ts",
+    "test:otlp": "npx tsx tools/test-otlp.ts",
+    "test:redact": "npx tsx tools/test-redact.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

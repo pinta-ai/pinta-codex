@@ -1,0 +1,299 @@
+/**
+ * One-shot installer for end users.
+ *
+ *   npm install && npm run setup
+ *
+ * Does everything a user needs in a single interactive command:
+ *   1. Builds dist/  (runs tsc if dist/index.js missing or --rebuild)
+ *   2. Prompts for endpoint / api-key (skipped if already set in file or env)
+ *   3. Writes them to ~/.codex/pinta-codex.env
+ *   4. Enables `codex_hooks = true` in ~/.codex/config.toml (idempotent)
+ *   5. Merges this plugin's hooks into ~/.codex/hooks.json with absolute paths
+ *   6. Checks `pinta login` status and prints a hint if unauthenticated
+ *   7. Prints a summary of what to run next
+ *
+ * Safe to re-run. Each step is idempotent.
+ */
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import readline from "node:readline";
+import { stdin, stdout } from "node:process";
+import {
+  CODEX_CONFIG_PATH,
+  CODEX_ENV_PATH,
+  CODEX_HOME,
+  CODEX_HOOKS_PATH,
+  PLUGIN_ENTRY,
+  PLUGIN_ROOT,
+  ensureCodexHooksEnabled,
+  loadResolvedTemplate,
+  mergeHooks,
+  readEnvFile,
+  readJson,
+  writeEnvFile,
+  type HooksFile,
+} from "./_lib.js";
+
+const ANSI = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
+  cyan: "\x1b[36m",
+};
+
+function tty(): boolean {
+  return Boolean(stdout.isTTY);
+}
+function ok(msg: string): void {
+  const mark = tty() ? `${ANSI.green}✔${ANSI.reset}` : "OK";
+  stdout.write(`  ${mark}  ${msg}\n`);
+}
+function info(msg: string): void {
+  const mark = tty() ? `${ANSI.cyan}ℹ${ANSI.reset}` : "--";
+  stdout.write(`  ${mark}  ${msg}\n`);
+}
+function warn(msg: string): void {
+  const mark = tty() ? `${ANSI.yellow}!${ANSI.reset}` : "!!";
+  stdout.write(`  ${mark}  ${msg}\n`);
+}
+function heading(title: string): void {
+  stdout.write(
+    tty() ? `\n${ANSI.bold}${title}${ANSI.reset}\n` : `\n## ${title}\n`,
+  );
+}
+
+// --- steps ---
+
+async function stepBuild(): Promise<void> {
+  heading("1. Build dist/");
+  const rebuild = process.argv.includes("--rebuild");
+  if (fs.existsSync(PLUGIN_ENTRY) && !rebuild) {
+    ok(`dist/index.js already present (pass --rebuild to force)`);
+    return;
+  }
+  info("running tsc...");
+  const result = spawnSync("npm", ["run", "build"], {
+    cwd: PLUGIN_ROOT,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    stderrFail(`tsc failed with exit ${result.status}`);
+  }
+  ok(`built ${PLUGIN_ENTRY}`);
+}
+
+async function stepEnv(ask: AskFn): Promise<{
+  endpoint: string;
+  apiKey: string;
+}> {
+  heading("2. Endpoint & API key");
+
+  const existingFile = readEnvFile(CODEX_ENV_PATH);
+  const currentEndpoint = process.env.PINTA_CODEX_ENDPOINT ?? existingFile.PINTA_CODEX_ENDPOINT ?? "";
+  const currentKey = process.env.PINTA_CODEX_API_KEY ?? existingFile.PINTA_CODEX_API_KEY ?? "";
+
+  const endpoint = await ask("Pinta endpoint URL", currentEndpoint, {
+    validate: (v) => {
+      if (!/^https?:\/\//.test(v)) return "must start with http:// or https://";
+      return null;
+    },
+  });
+  const apiKey = await ask("Pinta API key", currentKey, {
+    mask: true,
+    validate: (v) => (v.length < 4 ? "too short" : null),
+  });
+
+  const merged: Record<string, string> = {
+    ...existingFile,
+    PINTA_CODEX_ENDPOINT: endpoint,
+    PINTA_CODEX_API_KEY: apiKey,
+  };
+  writeEnvFile(CODEX_ENV_PATH, merged);
+  ok(`wrote ${CODEX_ENV_PATH}`);
+  return { endpoint, apiKey };
+}
+
+async function stepConfigToml(): Promise<void> {
+  heading("3. Enable codex_hooks feature");
+  let current = "";
+  try {
+    current = fs.readFileSync(CODEX_CONFIG_PATH, "utf-8");
+  } catch {
+    // file may not exist yet
+  }
+  const { next, changed } = ensureCodexHooksEnabled(current);
+  if (!changed) {
+    ok(`codex_hooks already enabled in ${CODEX_CONFIG_PATH}`);
+    return;
+  }
+  fs.mkdirSync(CODEX_HOME, { recursive: true });
+  fs.writeFileSync(CODEX_CONFIG_PATH, next, "utf-8");
+  ok(`updated ${CODEX_CONFIG_PATH}`);
+}
+
+async function stepHooks(): Promise<void> {
+  heading("4. Register hooks");
+  const incoming = loadResolvedTemplate();
+  const existing: HooksFile = readJson(CODEX_HOOKS_PATH, { hooks: {} });
+  const merged = mergeHooks(existing, incoming);
+  fs.mkdirSync(CODEX_HOME, { recursive: true });
+  fs.writeFileSync(CODEX_HOOKS_PATH, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+  ok(`wrote ${Object.keys(incoming.hooks).length} event(s) to ${CODEX_HOOKS_PATH}`);
+}
+
+async function stepIdentity(): Promise<void> {
+  heading("5. Pinta identity");
+  const id = runCli("id");
+  const email = runCli("email");
+  if (id && email) {
+    ok(`identity resolved: ${email} (${id.slice(0, 8)}…)`);
+    return;
+  }
+  warn("pinta CLI identity not available.");
+  stdout.write(
+    `      To authenticate:\n` +
+      `        pinta login\n` +
+      `        pinta identity id   # verify\n`,
+  );
+}
+
+async function stepSummary(endpoint: string): Promise<void> {
+  heading("Done");
+  stdout.write(
+    `  Run Codex to start streaming events:\n` +
+      `    ${tty() ? ANSI.bold : ""}codex${tty() ? ANSI.reset : ""}\n` +
+      `\n  Useful:\n` +
+      `    npm run doctor          # health check\n` +
+      `    npm run uninstall-hooks # remove this plugin's entries\n` +
+      `\n  Endpoint: ${endpoint}\n` +
+      `  Env file: ${CODEX_ENV_PATH}\n` +
+      `  Hooks:    ${CODEX_HOOKS_PATH}\n`,
+  );
+}
+
+// --- helpers ---
+
+function runCli(arg: "id" | "email"): string | null {
+  const r = spawnSync("pinta", ["identity", arg], {
+    timeout: 2000,
+    encoding: "utf-8",
+  });
+  if (r.error || r.status !== 0) return null;
+  const out = (r.stdout ?? "").trim();
+  return out.length === 0 ? null : out;
+}
+
+function stderrFail(msg: string): never {
+  process.stderr.write(`[setup] ${msg}\n`);
+  process.exit(1);
+}
+
+interface PromptOpts {
+  mask?: boolean;
+  validate?: (v: string) => string | null;
+}
+
+type AskFn = (label: string, defaultValue: string, opts?: PromptOpts) => Promise<string>;
+
+/**
+ * Build an ask() function that works in two modes:
+ *   - TTY: classic readline prompt loop with validation retries.
+ *   - Piped stdin (non-TTY): read all stdin upfront, consume one line per
+ *     question. We cannot retry a rejected value because there's no more input
+ *     — rejections throw instead.
+ *
+ * Why the split: node:readline/promises' `rl.question` hangs on the 2nd call
+ * when stdin is piped, making an interactive-only implementation unusable for
+ * scripted/CI setup runs.
+ */
+function buildAsk(): AskFn {
+  if (stdin.isTTY) {
+    const rl = readline.createInterface({ input: stdin, output: stdout });
+    const question = (prompt: string): Promise<string> =>
+      new Promise((resolve) => rl.question(prompt, resolve));
+    const ask: AskFn = async (label, defaultValue, opts = {}) => {
+      const shown = opts.mask && defaultValue ? "***" : defaultValue;
+      const suffix = defaultValue ? ` [${shown}]` : "";
+      while (true) {
+        const answer = (await question(`  ${label}${suffix}: `)).trim();
+        const value = answer === "" ? defaultValue : answer;
+        if (!value) {
+          stdout.write(`    (required)\n`);
+          continue;
+        }
+        const err = opts.validate?.(value);
+        if (err) {
+          stdout.write(`    ${tty() ? ANSI.red : ""}${err}${tty() ? ANSI.reset : ""}\n`);
+          continue;
+        }
+        return value;
+      }
+    };
+    (ask as AskFn & { close: () => void }).close = () => rl.close();
+    return ask;
+  }
+
+  // Non-TTY: slurp all lines eagerly.
+  const lines: string[] = [];
+  let drained = false;
+  let pending: Array<() => void> = [];
+  const drain = (chunk: Buffer | string): void => {
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    for (const raw of text.split("\n")) lines.push(raw);
+    // Split leaves a trailing empty element if input ended with \n; keep it
+    // because it's a legitimate "user pressed enter with nothing" answer.
+  };
+  stdin.on("data", drain);
+  stdin.once("end", () => {
+    drained = true;
+    const waiters = pending;
+    pending = [];
+    for (const w of waiters) w();
+  });
+
+  const waitForDrain = (): Promise<void> =>
+    drained ? Promise.resolve() : new Promise((resolve) => pending.push(resolve));
+
+  const ask: AskFn = async (label, defaultValue, opts = {}) => {
+    await waitForDrain();
+    const raw = lines.shift();
+    const answer = (raw ?? "").trim();
+    const value = answer === "" ? defaultValue : answer;
+    if (!value) {
+      throw new Error(`${label}: required (stdin exhausted).`);
+    }
+    const err = opts.validate?.(value);
+    if (err) {
+      throw new Error(`${label}: ${err}`);
+    }
+    return value;
+  };
+  return ask;
+}
+
+// --- main ---
+
+async function main(): Promise<void> {
+  stdout.write(
+    tty()
+      ? `\n${ANSI.bold}Pinta Codex — one-shot setup${ANSI.reset}\n`
+      : `\nPinta Codex — one-shot setup\n`,
+  );
+  const ask = buildAsk();
+  try {
+    await stepBuild();
+    const { endpoint } = await stepEnv(ask);
+    await stepConfigToml();
+    await stepHooks();
+    await stepIdentity();
+    await stepSummary(endpoint);
+  } finally {
+    (ask as AskFn & { close?: () => void }).close?.();
+  }
+}
+
+main().catch((err) => stderrFail(err instanceof Error ? err.message : String(err)));
