@@ -83,6 +83,8 @@ npm run install-hooks                  # merges absolute paths into ~/.codex/hoo
 npm run install-hooks -- --dry-run     # preview without writing
 ```
 
+`install-hooks` is idempotent: it prints `already up to date` when `~/.codex/hooks.json` already matches the bundled template, and auto-detects + removes stale `pinta-codex` entries from prior installs at a different path (reporting `removed N stale pinta-codex entries`).
+
 Then manually add to `~/.codex/config.toml`:
 
 ```toml
