@@ -35,7 +35,7 @@ function main(): void {
 
   const incoming = loadResolvedTemplate();
   const existing: HooksFile = readJson(CODEX_HOOKS_PATH, { hooks: {} });
-  const merged = mergeHooks(existing, incoming);
+  const { next: merged, staleRemoved } = mergeHooks(existing, incoming);
   const serialized = JSON.stringify(merged, null, 2) + "\n";
 
   if (dryRun) {
@@ -44,9 +44,27 @@ function main(): void {
     return;
   }
 
+  const previous = fs.existsSync(CODEX_HOOKS_PATH)
+    ? fs.readFileSync(CODEX_HOOKS_PATH, "utf-8")
+    : null;
+
+  if (previous === serialized) {
+    process.stdout.write(`[install-hooks] already up to date: ${CODEX_HOOKS_PATH}\n`);
+    process.stdout.write(`[install-hooks] plugin entry: ${PLUGIN_ENTRY}\n`);
+    return;
+  }
+
   fs.mkdirSync(CODEX_HOME, { recursive: true });
   fs.writeFileSync(CODEX_HOOKS_PATH, serialized, "utf-8");
-  process.stdout.write(`[install-hooks] wrote ${CODEX_HOOKS_PATH}\n`);
+  if (staleRemoved > 0) {
+    process.stdout.write(
+      `[install-hooks] removed ${staleRemoved} stale pinta-codex ` +
+        `${staleRemoved === 1 ? "entry" : "entries"} (prior install at a different path)\n`,
+    );
+  }
+  process.stdout.write(
+    `[install-hooks] ${previous === null ? "created" : "updated"} ${CODEX_HOOKS_PATH}\n`,
+  );
   process.stdout.write(`[install-hooks] plugin entry: ${PLUGIN_ENTRY}\n`);
 }
 

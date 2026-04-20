@@ -139,9 +139,20 @@ async function stepHooks(): Promise<void> {
   heading("4. Register hooks");
   const incoming = loadResolvedTemplate();
   const existing: HooksFile = readJson(CODEX_HOOKS_PATH, { hooks: {} });
-  const merged = mergeHooks(existing, incoming);
+  const { next: merged, staleRemoved } = mergeHooks(existing, incoming);
+  const serialized = JSON.stringify(merged, null, 2) + "\n";
+  const previous = fs.existsSync(CODEX_HOOKS_PATH)
+    ? fs.readFileSync(CODEX_HOOKS_PATH, "utf-8")
+    : null;
+  if (previous === serialized) {
+    ok(`${Object.keys(incoming.hooks).length} event(s) already registered in ${CODEX_HOOKS_PATH}`);
+    return;
+  }
   fs.mkdirSync(CODEX_HOME, { recursive: true });
-  fs.writeFileSync(CODEX_HOOKS_PATH, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+  fs.writeFileSync(CODEX_HOOKS_PATH, serialized, "utf-8");
+  if (staleRemoved > 0) {
+    ok(`removed ${staleRemoved} stale pinta-codex ${staleRemoved === 1 ? "entry" : "entries"} (prior install at a different path)`);
+  }
   ok(`wrote ${Object.keys(incoming.hooks).length} event(s) to ${CODEX_HOOKS_PATH}`);
 }
 

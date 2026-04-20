@@ -145,8 +145,17 @@ export function isCodexHooksEnabled(content: string): boolean {
 
 // --- hooks.json merge ---
 
+const STALE_PINTA_CODEX_RE = /\/pinta-codex(?:\/[^\s]*)?\/dist\/index\.js\b/;
+
 export function isPintaCodexEntry(cmd: HookCommand): boolean {
-  return cmd.command.includes(PLUGIN_ENTRY);
+  if (cmd.command.includes(PLUGIN_ENTRY)) return true;
+  return STALE_PINTA_CODEX_RE.test(cmd.command);
+}
+
+/** True when the entry points at a pinta-codex path other than the current PLUGIN_ENTRY. */
+export function isStalePintaCodexEntry(cmd: HookCommand): boolean {
+  if (cmd.command.includes(PLUGIN_ENTRY)) return false;
+  return STALE_PINTA_CODEX_RE.test(cmd.command);
 }
 
 /** Load the plugin's bundled template and resolve ${CODEX_PLUGIN_ROOT} → PLUGIN_ROOT. */
@@ -166,17 +175,30 @@ export function loadResolvedTemplate(): HooksFile {
   return out;
 }
 
-/** Merge `incoming` into `existing`, removing any prior pinta-codex entries first. */
-export function mergeHooks(existing: HooksFile, incoming: HooksFile): HooksFile {
+/**
+ * Merge `incoming` into `existing`, removing any prior pinta-codex entries
+ * first (both exact-path matches and stale entries from prior installs that
+ * used a different path).
+ */
+export function mergeHooks(
+  existing: HooksFile,
+  incoming: HooksFile,
+): { next: HooksFile; staleRemoved: number } {
   const merged: HooksFile = { hooks: { ...existing.hooks } };
+  let staleRemoved = 0;
   for (const [eventName, incomingMatchers] of Object.entries(incoming.hooks)) {
     const current = merged.hooks[eventName] ?? [];
     const cleaned = current
-      .map((m) => ({ ...m, hooks: m.hooks.filter((h) => !isPintaCodexEntry(h)) }))
+      .map((m) => {
+        const staleBefore = m.hooks.filter((h) => isStalePintaCodexEntry(h)).length;
+        staleRemoved += staleBefore;
+        const kept = m.hooks.filter((h) => !isPintaCodexEntry(h));
+        return { ...m, hooks: kept };
+      })
       .filter((m) => m.hooks.length > 0);
     merged.hooks[eventName] = [...cleaned, ...incomingMatchers];
   }
-  return merged;
+  return { next: merged, staleRemoved };
 }
 
 export function stripPintaCodex(existing: HooksFile): {
