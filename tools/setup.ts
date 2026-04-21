@@ -93,7 +93,7 @@ async function stepEnv(ask: AskFn): Promise<{
   heading("2. Endpoint & API key");
 
   const existingFile = readEnvFile(CODEX_ENV_PATH);
-  const currentEndpoint = process.env.PINTA_CODEX_ENDPOINT ?? existingFile.PINTA_CODEX_ENDPOINT ?? "";
+  const currentEndpoint = process.env.PINTA_CODEX_ENDPOINT ?? existingFile.PINTA_CODEX_ENDPOINT ?? "https://api.pinta.sh";
   const currentKey = process.env.PINTA_CODEX_API_KEY ?? existingFile.PINTA_CODEX_API_KEY ?? "";
 
   const endpoint = await ask("Pinta endpoint URL", currentEndpoint, {
