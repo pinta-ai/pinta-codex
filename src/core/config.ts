@@ -2,30 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export interface PintaConfig {
-  endpoint: string;
-  apiKey: string;
+export interface PintaCodexConfig {
   pluginRoot: string;
   pluginData: string;
-  rulesPath: string;
-  healthPath: string;
   tracePath: string;
-}
-
-/**
- * Resolve config in this order (later wins, so env vars override the file):
- *   1. `~/.codex/pinta-codex.env` (KEY=VALUE per line, written by `npm run setup`)
- *   2. process.env (so one-off `PINTA_CODEX_ENDPOINT=... codex` still works)
- *   3. Claude-Code-style `CLAUDE_PLUGIN_OPTION_*` vars (parity with pinta-cc)
- */
-function resolveSetting(fromFile: Record<string, string>, keys: string[]): string | undefined {
-  for (const k of keys) {
-    if (process.env[k]) return process.env[k];
-  }
-  for (const k of keys) {
-    if (fromFile[k]) return fromFile[k];
-  }
-  return undefined;
+  endpoint?: string;
+  headers: Record<string, string>;
 }
 
 function readEnvFile(p: string): Record<string, string> {
@@ -54,42 +36,67 @@ function readEnvFile(p: string): Record<string, string> {
   return out;
 }
 
-export function loadConfig(): PintaConfig {
-  const pluginRoot = process.env.CODEX_PLUGIN_ROOT || process.env.CLAUDE_PLUGIN_ROOT ||
-    process.cwd();
-  const pluginData = process.env.CODEX_PLUGIN_DATA || process.env.CLAUDE_PLUGIN_DATA ||
-    path.join(pluginRoot, ".plugin-data");
+function resolveEndpoint(envFile: Record<string, string>): string | undefined {
+  return process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+    ?? envFile.OTEL_EXPORTER_OTLP_ENDPOINT
+    ?? process.env.PINTA_CODEX_ENDPOINT          // legacy
+    ?? envFile.PINTA_CODEX_ENDPOINT              // legacy
+    ?? process.env.CLAUDE_PLUGIN_OPTION_ENDPOINT // parity
+    ?? undefined;
+}
 
-  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
-  const fromFile = readEnvFile(path.join(codexHome, "pinta-codex.env"));
-
-  const endpoint = resolveSetting(fromFile, [
-    "PINTA_CODEX_ENDPOINT",
-    "CLAUDE_PLUGIN_OPTION_ENDPOINT",
-  ]);
-  const apiKey = resolveSetting(fromFile, [
-    "PINTA_CODEX_API_KEY",
-    "CLAUDE_PLUGIN_OPTION_API_KEY",
-  ]);
-
-  if (!endpoint) {
-    throw new Error(
-      "endpoint is not configured. Run 'npm run setup' or set PINTA_CODEX_ENDPOINT.",
-    );
+function resolveHeaders(envFile: Record<string, string>): string | undefined {
+  // Primary: OTel-spec, already in `key=val,key=val` format
+  if (process.env.OTEL_EXPORTER_OTLP_HEADERS) return process.env.OTEL_EXPORTER_OTLP_HEADERS;
+  if (envFile.OTEL_EXPORTER_OTLP_HEADERS) return envFile.OTEL_EXPORTER_OTLP_HEADERS;
+  // Legacy: raw token → wrap as x-pinta-relay-token header
+  if (process.env.PINTA_CODEX_API_KEY) {
+    return `x-pinta-relay-token=${process.env.PINTA_CODEX_API_KEY}`;
   }
-  if (!apiKey) {
-    throw new Error(
-      "api_key is not configured. Run 'npm run setup' or set PINTA_CODEX_API_KEY.",
-    );
+  if (envFile.PINTA_CODEX_API_KEY) {
+    return `x-pinta-relay-token=${envFile.PINTA_CODEX_API_KEY}`;
   }
+  // Parity: Claude Code-style userConfig env (raw token, same wrap)
+  if (process.env.CLAUDE_PLUGIN_OPTION_API_KEY) {
+    return `x-pinta-relay-token=${process.env.CLAUDE_PLUGIN_OPTION_API_KEY}`;
+  }
+  return undefined;
+}
+
+function parseHeadersString(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw) return out;
+  for (const pair of raw.split(",")) {
+    const [k, ...rest] = pair.split("=");
+    if (k && rest.length > 0) out[k.trim()] = rest.join("=").trim();
+  }
+  return out;
+}
+
+export function loadConfig(): PintaCodexConfig {
+  const pluginRoot = process.env.CODEX_PLUGIN_ROOT
+    ?? process.env.CLAUDE_PLUGIN_ROOT
+    ?? process.cwd();
+  const pluginData = process.env.CODEX_PLUGIN_DATA
+    ?? process.env.CLAUDE_PLUGIN_DATA
+    ?? path.join(pluginRoot, ".plugin-data");
+  const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+  const envFilePath = path.join(codexHome, "pinta-codex.env");
+  const envFile = fs.existsSync(envFilePath) ? readEnvFile(envFilePath) : {};
+
+  const endpoint = resolveEndpoint(envFile);
+  const headersRaw = resolveHeaders(envFile);
 
   return {
-    endpoint: endpoint.replace(/\/+$/, ""),
-    apiKey,
     pluginRoot,
     pluginData,
-    rulesPath: path.join(pluginData, "rules.json"),
-    healthPath: path.join(pluginData, "health.json"),
     tracePath: path.join(pluginData, "trace.json"),
+    endpoint: endpoint?.replace(/\/+$/, ""),
+    headers: parseHeadersString(headersRaw ?? ""),
   };
+}
+
+/** Returns true if OTel endpoint is configured (signal to silently disable telemetry). */
+export function hasOtlpEndpoint(config: PintaCodexConfig): boolean {
+  return Boolean(config.endpoint);
 }

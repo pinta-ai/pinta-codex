@@ -1,7 +1,7 @@
 {
   "name": "pinta-codex",
-  "version": "1.0.0",
-  "description": "Codex security monitoring plugin",
+  "version": "1.2.0",
+  "description": "Generic OTLP forwarder for Codex hook events",
   "main": "dist/index.js",
   "license": "SEE LICENSE IN ./LICENSE",
   "author": "Pinta AI (https://pinta.sh)",
@@ -22,10 +22,13 @@
     "uninstall-hooks": "npx tsx tools/uninstall-hooks.ts",
     "mock-server": "npx tsx tools/mock-server.ts",
     "test:otlp": "npx tsx tools/test-otlp.ts",
-    "test:redact": "npx tsx tools/test-redact.ts"
+    "test:redact": "npx tsx tools/test-redact.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

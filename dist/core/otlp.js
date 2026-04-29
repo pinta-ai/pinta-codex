@@ -10,7 +10,7 @@ exports.mergeBatch = mergeBatch;
 const crypto_1 = __importDefault(require("crypto"));
 const os_1 = __importDefault(require("os"));
 const redact_js_1 = require("./redact.js");
-const PLUGIN_VERSION = "1.0.0"; // keep in sync with .codex-plugin/plugin.json
+const PLUGIN_VERSION = "1.2.0"; // keep in sync with .codex-plugin/plugin.json
 /**
  * Resolve the Codex CLI version from an explicit env if present.
  * Hooks run as short-lived processes, so we keep this intentionally simple.
@@ -129,16 +129,13 @@ function flattenEvent(event) {
     }
     return out;
 }
-function resourceAttrs(identity) {
+function resourceAttrs() {
     return [
         { key: "service.name", value: { stringValue: "codex" } },
         { key: "service.version", value: { stringValue: getCodexVersion() } },
         { key: "telemetry.sdk.name", value: { stringValue: "pinta-codex" } },
         { key: "telemetry.sdk.language", value: { stringValue: "nodejs" } },
         { key: "telemetry.sdk.version", value: { stringValue: PLUGIN_VERSION } },
-        { key: "codex.client", value: { stringValue: "codex" } },
-        { key: "member.identity.id", value: { stringValue: identity.id } },
-        { key: "member.identity.email", value: { stringValue: identity.email } },
         { key: "process.pid", value: { intValue: process.pid } },
         { key: "process.owner", value: { stringValue: os_1.default.userInfo().username } },
         { key: "host.name", value: { stringValue: os_1.default.hostname() } },
@@ -160,7 +157,7 @@ function buildOtlpPayload(args) {
     return {
         resourceSpans: [
             {
-                resource: { attributes: resourceAttrs(args.identity) },
+                resource: { attributes: resourceAttrs() },
                 scopeSpans: [
                     {
                         scope: { name: "pinta-codex", version: PLUGIN_VERSION },

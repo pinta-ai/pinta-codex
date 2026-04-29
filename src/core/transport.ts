@@ -1,41 +1,32 @@
-import type { PintaConfig } from "./config.js";
+import type { PintaCodexConfig } from "./config.js";
 import type { OtlpPayload } from "./otlp.js";
 import { mergeBatch } from "./otlp.js";
 import { RetryQueue } from "./retry-queue.js";
 
 const TIMEOUT_MS = 5000;
 
-function hintFor(status: number): string | null {
-  if (status === 401 || status === 403) return "check PINTA_CODEX_API_KEY";
-  if (status === 404) return "check PINTA_CODEX_ENDPOINT path";
-  if (status >= 500) return "backend is down — retry queue will flush on next hook";
-  return null;
+function hintFor(status: number): string {
+  if (status === 401 || status === 403) return " — check OTEL_EXPORTER_OTLP_HEADERS";
+  if (status === 404) return " — check OTEL_EXPORTER_OTLP_ENDPOINT path";
+  if (status >= 500) return " — collector may be down";
+  return "";
 }
 
 export class Transport {
-  private config: PintaConfig;
   private queue: RetryQueue;
 
-  constructor(config: PintaConfig) {
-    this.config = config;
+  constructor(private config: PintaCodexConfig) {
     this.queue = new RetryQueue(config.pluginData);
   }
 
-  /**
-   * POST a single payload. On any failure, enqueue it for the next hook to retry.
-   * Never throws — handlers must always reach exit 0/1/2 deterministically.
-   */
   async send(payload: OtlpPayload): Promise<void> {
+    if (!this.config.endpoint) return;  // Silent disable
     const ok = await this.post(payload);
     if (!ok) this.queue.enqueue(payload);
   }
 
-  /**
-   * Best-effort drain. Acquires the lock, reads the queue, attempts a single
-   * batched POST. On failure, leaves the queue untouched. Lock-acquire failure
-   * is silent — the next hook will try.
-   */
   async flush(): Promise<void> {
+    if (!this.config.endpoint) return;
     if (!this.queue.tryAcquireLock()) return;
     try {
       const entries = this.queue.readAll();
@@ -49,35 +40,28 @@ export class Transport {
   }
 
   private async post(payload: OtlpPayload): Promise<boolean> {
-    const url = `${this.config.endpoint}/traces`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
+      const res = await fetch(`${this.config.endpoint}/traces`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": this.config.apiKey,
+          ...this.config.headers,
         },
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        signal: ctrl.signal,
       });
       if (!res.ok) {
-        const hint = hintFor(res.status);
-        process.stderr.write(
-          `[pinta-codex] POST /traces failed: HTTP ${res.status}${hint ? `  (${hint})` : ""}\n`,
-        );
+        process.stderr.write(`[pinta-codex] OTLP ${res.status}${hintFor(res.status)}\n`);
         return false;
       }
       return true;
     } catch (err) {
-      process.stderr.write(
-        `[pinta-codex] POST /traces failed: ${err}\n` +
-          `  Check endpoint/network, then 'npm run doctor' to verify.\n`,
-      );
+      process.stderr.write(`[pinta-codex] OTLP failed: ${(err as Error).message ?? String(err)}\n`);
       return false;
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(timer);
     }
   }
 }

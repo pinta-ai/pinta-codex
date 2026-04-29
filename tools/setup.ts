@@ -5,12 +5,11 @@
  *
  * Does everything a user needs in a single interactive command:
  *   1. Builds dist/  (runs tsc if dist/index.js missing or --rebuild)
- *   2. Prompts for endpoint / api-key (skipped if already set in file or env)
+ *   2. Prompts for OTLP endpoint & headers (migrates legacy keys if present)
  *   3. Writes them to ~/.codex/pinta-codex.env
  *   4. Enables `codex_hooks = true` in ~/.codex/config.toml (idempotent)
  *   5. Merges this plugin's hooks into ~/.codex/hooks.json with absolute paths
- *   6. Checks `pinta login` status and prints a hint if unauthenticated
- *   7. Prints a summary of what to run next
+ *   6. Prints a summary of what to run next
  *
  * Safe to re-run. Each step is idempotent.
  */
@@ -29,6 +28,7 @@ import {
   ensureCodexHooksEnabled,
   loadResolvedTemplate,
   mergeHooks,
+  migrateLegacyEnvKeys,
   readEnvFile,
   readJson,
   writeEnvFile,
@@ -54,10 +54,6 @@ function ok(msg: string): void {
 }
 function info(msg: string): void {
   const mark = tty() ? `${ANSI.cyan}ℹ${ANSI.reset}` : "--";
-  stdout.write(`  ${mark}  ${msg}\n`);
-}
-function warn(msg: string): void {
-  const mark = tty() ? `${ANSI.yellow}!${ANSI.reset}` : "!!";
   stdout.write(`  ${mark}  ${msg}\n`);
 }
 function heading(title: string): void {
@@ -86,35 +82,43 @@ async function stepBuild(): Promise<void> {
   ok(`built ${PLUGIN_ENTRY}`);
 }
 
-async function stepEnv(ask: AskFn): Promise<{
-  endpoint: string;
-  apiKey: string;
-}> {
-  heading("2. Endpoint & API key");
+async function stepEnv(ask: AskFn): Promise<{ endpoint: string; headers: string }> {
+  heading("2. OTLP endpoint & headers");
+
+  // Migrate legacy keys to OTel-spec naming (writes .bak if migration occurs)
+  const renamed = migrateLegacyEnvKeys(CODEX_ENV_PATH);
+  for (const key of renamed) {
+    info(`migrated legacy key ${key} → OTel-spec name (.bak written)`);
+  }
 
   const existingFile = readEnvFile(CODEX_ENV_PATH);
-  const currentEndpoint = process.env.PINTA_CODEX_ENDPOINT ?? existingFile.PINTA_CODEX_ENDPOINT ?? "https://api.pinta.sh";
-  const currentKey = process.env.PINTA_CODEX_API_KEY ?? existingFile.PINTA_CODEX_API_KEY ?? "";
+  const currentEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+    ?? existingFile.OTEL_EXPORTER_OTLP_ENDPOINT
+    ?? "http://localhost:4318";
+  const currentHeaders = process.env.OTEL_EXPORTER_OTLP_HEADERS
+    ?? existingFile.OTEL_EXPORTER_OTLP_HEADERS
+    ?? "";
 
-  const endpoint = await ask("Pinta endpoint URL", currentEndpoint, {
-    validate: (v) => {
-      if (!/^https?:\/\//.test(v)) return "must start with http:// or https://";
-      return null;
-    },
+  const endpoint = await ask("OTLP endpoint URL", currentEndpoint, {
+    validate: (v) => /^https?:\/\//.test(v) ? null : "must start with http:// or https://",
   });
-  const apiKey = await ask("Pinta API key", currentKey, {
+  const headers = await ask("OTLP headers (key1=val1,key2=val2; blank if none)", currentHeaders, {
     mask: true,
-    validate: (v) => (v.length < 4 ? "too short" : null),
+    optional: true,
   });
 
   const merged: Record<string, string> = {
     ...existingFile,
-    PINTA_CODEX_ENDPOINT: endpoint,
-    PINTA_CODEX_API_KEY: apiKey,
+    OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
   };
+  if (headers) {
+    merged.OTEL_EXPORTER_OTLP_HEADERS = headers;
+  } else {
+    delete merged.OTEL_EXPORTER_OTLP_HEADERS;
+  }
   writeEnvFile(CODEX_ENV_PATH, merged);
   ok(`wrote ${CODEX_ENV_PATH}`);
-  return { endpoint, apiKey };
+  return { endpoint, headers };
 }
 
 async function stepConfigToml(): Promise<void> {
@@ -156,22 +160,6 @@ async function stepHooks(): Promise<void> {
   ok(`wrote ${Object.keys(incoming.hooks).length} event(s) to ${CODEX_HOOKS_PATH}`);
 }
 
-async function stepIdentity(): Promise<void> {
-  heading("5. Pinta identity");
-  const id = runCli("id");
-  const email = runCli("email");
-  if (id && email) {
-    ok(`identity resolved: ${email} (${id.slice(0, 8)}…)`);
-    return;
-  }
-  warn("pinta CLI identity not available.");
-  stdout.write(
-    `      To authenticate:\n` +
-      `        pinta login\n` +
-      `        pinta identity id   # verify\n`,
-  );
-}
-
 async function stepSummary(endpoint: string): Promise<void> {
   heading("Done");
   stdout.write(
@@ -188,16 +176,6 @@ async function stepSummary(endpoint: string): Promise<void> {
 
 // --- helpers ---
 
-function runCli(arg: "id" | "email"): string | null {
-  const r = spawnSync("pinta", ["identity", arg], {
-    timeout: 2000,
-    encoding: "utf-8",
-  });
-  if (r.error || r.status !== 0) return null;
-  const out = (r.stdout ?? "").trim();
-  return out.length === 0 ? null : out;
-}
-
 function stderrFail(msg: string): never {
   process.stderr.write(`[setup] ${msg}\n`);
   process.exit(1);
@@ -205,6 +183,7 @@ function stderrFail(msg: string): never {
 
 interface PromptOpts {
   mask?: boolean;
+  optional?: boolean;
   validate?: (v: string) => string | null;
 }
 
@@ -232,7 +211,7 @@ function buildAsk(): AskFn {
       while (true) {
         const answer = (await question(`  ${label}${suffix}: `)).trim();
         const value = answer === "" ? defaultValue : answer;
-        if (!value) {
+        if (!value && !opts.optional) {
           stdout.write(`    (required)\n`);
           continue;
         }
@@ -274,7 +253,7 @@ function buildAsk(): AskFn {
     const raw = lines.shift();
     const answer = (raw ?? "").trim();
     const value = answer === "" ? defaultValue : answer;
-    if (!value) {
+    if (!value && !opts.optional) {
       throw new Error(`${label}: required (stdin exhausted).`);
     }
     const err = opts.validate?.(value);
@@ -300,7 +279,6 @@ async function main(): Promise<void> {
     const { endpoint } = await stepEnv(ask);
     await stepConfigToml();
     await stepHooks();
-    await stepIdentity();
     await stepSummary(endpoint);
   } finally {
     (ask as AskFn & { close?: () => void }).close?.();

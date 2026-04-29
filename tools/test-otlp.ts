@@ -22,7 +22,6 @@ check('flattenEvent emits ingest.type=codex as first attribute', () => {
       prompt: 'hi',
     },
     traceId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-    identity: { id: 'i1', email: 'u@x' },
     now: 1700000000000,
   });
   const attrs = payload.resourceSpans[0].scopeSpans[0].spans[0].attributes;
@@ -43,7 +42,6 @@ check('flattenEvent still emits codex.hook and other codex.* attrs', () => {
       tool_use_id: 'tu1',
     },
     traceId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-    identity: { id: 'i1', email: 'u@x' },
     now: 1700000000000,
   });
   const attrs = payload.resourceSpans[0].scopeSpans[0].spans[0].attributes;

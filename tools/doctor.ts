@@ -7,7 +7,6 @@
  * check fails. Yellow warnings do not fail the exit code.
  */
 
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -64,22 +63,33 @@ function checkDist(): void {
   pass("dist/index.js", PLUGIN_ENTRY);
 }
 
-function checkEnv(): { endpoint?: string; apiKey?: string } {
+function checkEnv(): { endpoint?: string; headers?: string } {
   const fromFile = readEnvFile(CODEX_ENV_PATH);
-  const endpoint = process.env.PINTA_CODEX_ENDPOINT || fromFile.PINTA_CODEX_ENDPOINT;
-  const apiKey = process.env.PINTA_CODEX_API_KEY || fromFile.PINTA_CODEX_API_KEY;
+  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+    ?? fromFile.OTEL_EXPORTER_OTLP_ENDPOINT
+    ?? process.env.PINTA_CODEX_ENDPOINT
+    ?? fromFile.PINTA_CODEX_ENDPOINT;
+  const headers = process.env.OTEL_EXPORTER_OTLP_HEADERS
+    ?? fromFile.OTEL_EXPORTER_OTLP_HEADERS
+    ?? (process.env.PINTA_CODEX_API_KEY
+        ? `x-pinta-relay-token=${process.env.PINTA_CODEX_API_KEY}`
+        : undefined)
+    ?? (fromFile.PINTA_CODEX_API_KEY
+        ? `x-pinta-relay-token=${fromFile.PINTA_CODEX_API_KEY}`
+        : undefined);
 
-  if (endpoint && apiKey) {
-    const source = process.env.PINTA_CODEX_ENDPOINT ? "env" : "file";
-    pass("endpoint + api key", `source=${source}, endpoint=${endpoint}`);
-  } else if (endpoint) {
-    fail("api key", "missing", "Run 'npm run setup' or set PINTA_CODEX_API_KEY.");
-  } else if (apiKey) {
-    fail("endpoint", "missing", "Run 'npm run setup' or set PINTA_CODEX_ENDPOINT.");
+  const usingLegacy = !!(fromFile.PINTA_CODEX_ENDPOINT || fromFile.PINTA_CODEX_API_KEY
+    || process.env.PINTA_CODEX_ENDPOINT || process.env.PINTA_CODEX_API_KEY);
+
+  if (endpoint) {
+    pass("OTLP endpoint", endpoint);
+    if (usingLegacy) {
+      warn("legacy keys", "PINTA_CODEX_* keys still in use", "Run 'npm run setup' to migrate to OTEL_EXPORTER_OTLP_* (auto-renames + writes .bak).");
+    }
   } else {
-    fail("config", "no env file and no env vars", "Run 'npm run setup'.");
+    fail("OTLP endpoint", "not configured", "Run 'npm run setup' or set OTEL_EXPORTER_OTLP_ENDPOINT.");
   }
-  return { endpoint, apiKey };
+  return { endpoint, headers };
 }
 
 function checkCodexHooksFlag(): void {
@@ -145,35 +155,6 @@ function checkHooksRegistered(): void {
   }
 }
 
-function checkPintaCli(): void {
-  const r = spawnSync("pinta", ["--version"], { timeout: 2000, encoding: "utf-8" });
-  if (r.error || r.status !== 0) {
-    fail(
-      "pinta CLI",
-      "not found or not executable",
-      "Install the Pinta CLI, then 'pinta login'.",
-    );
-    return;
-  }
-  pass("pinta CLI", (r.stdout ?? "").trim());
-}
-
-function checkPintaIdentity(): void {
-  const id = spawnSync("pinta", ["identity", "id"], { timeout: 2000, encoding: "utf-8" });
-  const email = spawnSync("pinta", ["identity", "email"], { timeout: 2000, encoding: "utf-8" });
-  const idOk = !id.error && id.status === 0 && (id.stdout ?? "").trim().length > 0;
-  const emailOk = !email.error && email.status === 0 && (email.stdout ?? "").trim().length > 0;
-  if (idOk && emailOk) {
-    pass("pinta identity", `${(email.stdout ?? "").trim()}`);
-    return;
-  }
-  fail(
-    "pinta identity",
-    "not authenticated",
-    "Run 'pinta login', then 'pinta identity id' to verify.",
-  );
-}
-
 async function checkEndpointReachability(endpoint?: string): Promise<void> {
   if (!endpoint) {
     warn("endpoint reachability", "skipped (no endpoint configured)");
@@ -193,7 +174,7 @@ async function checkEndpointReachability(endpoint?: string): Promise<void> {
     fail(
       "endpoint reachability",
       `cannot reach ${url}: ${err instanceof Error ? err.message : String(err)}`,
-      "Check network / VPN / PINTA_CODEX_ENDPOINT value.",
+      "Check network / VPN / OTEL_EXPORTER_OTLP_ENDPOINT value.",
     );
   } finally {
     clearTimeout(timeout);
@@ -261,8 +242,6 @@ async function main(): Promise<void> {
   const { endpoint } = checkEnv();
   checkCodexHooksFlag();
   checkHooksRegistered();
-  checkPintaCli();
-  checkPintaIdentity();
   await checkEndpointReachability(endpoint);
   checkRetryQueue();
   process.exit(printResults());

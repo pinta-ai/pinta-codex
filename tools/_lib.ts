@@ -77,6 +77,45 @@ export function writeEnvFile(p: string, values: Record<string, string>): void {
   fs.writeFileSync(p, body + "\n", "utf-8");
 }
 
+/**
+ * Migrate legacy `PINTA_CODEX_*` keys to OTel-spec names.
+ * - PINTA_CODEX_ENDPOINT → OTEL_EXPORTER_OTLP_ENDPOINT
+ * - PINTA_CODEX_API_KEY  → OTEL_EXPORTER_OTLP_HEADERS=x-pinta-relay-token=<value>
+ *
+ * If migration occurs, writes `<path>.bak` with the original content first
+ * (idempotent — won't overwrite an existing .bak), then writes the file with
+ * the new keys. Existing OTel-spec keys win and are preserved as-is.
+ *
+ * Returns the list of legacy keys that were migrated, or empty array if no
+ * migration was needed.
+ */
+export function migrateLegacyEnvKeys(p: string): string[] {
+  if (!fs.existsSync(p)) return [];
+  const original = fs.readFileSync(p, "utf-8");
+  const values = readEnvFile(p);
+  const renamed: string[] = [];
+
+  if (values.PINTA_CODEX_ENDPOINT && !values.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    values.OTEL_EXPORTER_OTLP_ENDPOINT = values.PINTA_CODEX_ENDPOINT;
+    delete values.PINTA_CODEX_ENDPOINT;
+    renamed.push("PINTA_CODEX_ENDPOINT");
+  }
+  if (values.PINTA_CODEX_API_KEY && !values.OTEL_EXPORTER_OTLP_HEADERS) {
+    values.OTEL_EXPORTER_OTLP_HEADERS = `x-pinta-relay-token=${values.PINTA_CODEX_API_KEY}`;
+    delete values.PINTA_CODEX_API_KEY;
+    renamed.push("PINTA_CODEX_API_KEY");
+  }
+
+  if (renamed.length === 0) return [];
+
+  const bakPath = `${p}.bak`;
+  if (!fs.existsSync(bakPath)) {
+    fs.writeFileSync(bakPath, original, "utf-8");
+  }
+  writeEnvFile(p, values);
+  return renamed;
+}
+
 // --- TOML: minimal, targeted `[features].codex_hooks = true` toggle ---
 
 /**

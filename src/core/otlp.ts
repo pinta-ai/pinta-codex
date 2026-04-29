@@ -1,10 +1,9 @@
 import crypto from "crypto";
 import os from "os";
-import type { Identity } from "./identity.js";
 import type { BaseEvent } from "./types.js";
 import { redact, truncate } from "./redact.js";
 
-const PLUGIN_VERSION = "1.0.0"; // keep in sync with .codex-plugin/plugin.json
+const PLUGIN_VERSION = "1.2.0"; // keep in sync with .codex-plugin/plugin.json
 
 /**
  * Resolve the Codex CLI version from an explicit env if present.
@@ -156,16 +155,13 @@ function flattenEvent(event: BaseEvent): OtlpAttribute[] {
   return out;
 }
 
-function resourceAttrs(identity: Identity): OtlpAttribute[] {
+function resourceAttrs(): OtlpAttribute[] {
   return [
     { key: "service.name", value: { stringValue: "codex" } },
     { key: "service.version", value: { stringValue: getCodexVersion() } },
     { key: "telemetry.sdk.name", value: { stringValue: "pinta-codex" } },
     { key: "telemetry.sdk.language", value: { stringValue: "nodejs" } },
     { key: "telemetry.sdk.version", value: { stringValue: PLUGIN_VERSION } },
-    { key: "codex.client", value: { stringValue: "codex" } },
-    { key: "member.identity.id", value: { stringValue: identity.id } },
-    { key: "member.identity.email", value: { stringValue: identity.email } },
     { key: "process.pid", value: { intValue: process.pid } },
     { key: "process.owner", value: { stringValue: os.userInfo().username } },
     { key: "host.name", value: { stringValue: os.hostname() } },
@@ -176,7 +172,6 @@ function resourceAttrs(identity: Identity): OtlpAttribute[] {
 export function buildOtlpPayload(args: {
   event: BaseEvent;
   traceId: string; // ULID (26 chars)
-  identity: Identity;
   now?: number; // ms since epoch; injectable for tests
 }): OtlpPayload {
   const ts = args.now ?? Date.now();
@@ -193,7 +188,7 @@ export function buildOtlpPayload(args: {
   return {
     resourceSpans: [
       {
-        resource: { attributes: resourceAttrs(args.identity) },
+        resource: { attributes: resourceAttrs() },
         scopeSpans: [
           {
             scope: { name: "pinta-codex", version: PLUGIN_VERSION },

@@ -8,8 +8,6 @@ import {
   isSkippedHook,
 } from "./core/types.js";
 import type { BaseEvent } from "./core/types.js";
-import type { IdentityResolver } from "./core/identity.js";
-import { PintaIdentityResolver } from "./enterprise/pinta-identity.js";
 import { handlePreToolUse } from "./handlers/pre-tool-use.js";
 import { handlePostToolUse } from "./handlers/post-tool-use.js";
 import { handleUserPrompt } from "./handlers/user-prompt.js";
@@ -28,10 +26,6 @@ async function readStdin(): Promise<string> {
 async function main(): Promise<void> {
   let exitCode = 0;
 
-  // The DI seam: this is the ONLY place we instantiate an enterprise resolver.
-  // Future OSS extraction swaps this line for `NoOpIdentityResolver`.
-  const identityResolver: IdentityResolver = new PintaIdentityResolver();
-
   try {
     const config = loadConfig();
     const raw = await readStdin();
@@ -40,19 +34,15 @@ async function main(): Promise<void> {
     if (isSkippedHook(event)) {
       exitCode = await handleDefault(event);
     } else if (isPreToolUseEvent(event)) {
-      const result = await handlePreToolUse(event, config, identityResolver);
-      exitCode = result.exitCode;
-      if (result.output) {
-        process.stdout.write(JSON.stringify(result.output));
-      }
+      exitCode = await handlePreToolUse(event, config);
     } else if (isPostToolUseEvent(event)) {
-      exitCode = await handlePostToolUse(event, config, identityResolver);
+      exitCode = await handlePostToolUse(event, config);
     } else if (isUserPromptSubmitEvent(event)) {
-      exitCode = await handleUserPrompt(event, config, identityResolver);
+      exitCode = await handleUserPrompt(event, config);
     } else if (isSessionEvent(event)) {
-      exitCode = await handleSession(event, config, identityResolver);
+      exitCode = await handleSession(event, config);
     } else if (isStopEvent(event)) {
-      exitCode = await handleStop(event, config, identityResolver);
+      exitCode = await handleStop(event, config);
     } else {
       exitCode = await handleDefault(event);
     }

@@ -3,14 +3,8 @@ import fs from "fs";
 import path from "path";
 
 const PORT = 3000;
-const API_KEY = "test-token";
 const DATA_DIR = path.join(__dirname, ".data");
 const EVENTS_FILE = path.join(DATA_DIR, "events.json");
-
-// 차단 룰 설정 (테스트용으로 수정 가능)
-const rules: Array<{ id: string; action: string; toolName: string; reason: string }> = [
-  // { id: "r1", action: "block", toolName: "Bash", reason: "Bash 사용이 차단되었습니다" },
-];
 
 // --- Storage ---
 
@@ -42,7 +36,7 @@ const HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pinta - Event Viewer</title>
+<title>Mock OTLP Collector</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
@@ -356,11 +350,6 @@ function toViewerEvent(rs: any): Record<string, unknown> | null {
     const v = a.value ?? {};
     attrs[a.key] = v.stringValue ?? v.intValue ?? v.boolValue ?? v.doubleValue ?? null;
   }
-  const resourceAttrs: Record<string, unknown> = {};
-  for (const a of rs.resource?.attributes ?? []) {
-    const v = a.value ?? {};
-    resourceAttrs[a.key] = v.stringValue ?? v.intValue ?? v.boolValue ?? v.doubleValue ?? null;
-  }
   // Re-hydrate the original hook event shape under `payload` so the UI's summarize() works.
   const payload: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(attrs)) {
@@ -380,10 +369,6 @@ function toViewerEvent(rs: any): Record<string, unknown> | null {
     eventType: payload.hook ?? span.name,
     toolName: payload.tool_name,
     payload,
-    identity: {
-      id: resourceAttrs["member.identity.id"],
-      email: resourceAttrs["member.identity.email"],
-    },
   };
 }
 
@@ -414,37 +399,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Non-API requests (favicon, unknown paths) — skip auth gate
-  if (!req.url?.startsWith("/api/") && req.url !== "/traces") {
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not Found" }));
-    return;
-  }
-
-  // Plugin API - auth required (x-api-key)
-  const apiKey = req.headers["x-api-key"];
-  if (apiKey !== API_KEY) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Unauthorized" }));
-    log("UNAUTHORIZED", { method: req.method, url: req.url, got: apiKey ?? "(none)", expected: API_KEY });
-    return;
-  }
-
-  // GET /api/health
-  if (req.method === "GET" && req.url === "/api/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
-    return;
-  }
-
-  // GET /api/rules
-  if (req.method === "GET" && req.url === "/api/rules") {
-    const body = { rules, version: "v1" };
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(body));
-    return;
-  }
-
   // POST /traces (OTLP)
   if (req.method === "POST" && req.url === "/traces") {
     let data = "";
@@ -469,36 +423,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /api/events
-  if (req.method === "POST" && req.url === "/api/events") {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => {
-      try {
-        const event = JSON.parse(data);
-        saveEvent(event);
-        log(`EVENT [${event.eventType}]${event.toolName ? ` tool=${event.toolName}` : ""}`, { traceId: event.traceId, toolName: event.toolName });
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ received: true }));
-      } catch {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Invalid JSON" }));
-      }
-    });
-    return;
-  }
-
   res.writeHead(404);
   res.end();
 });
 
 server.listen(PORT, () => {
-  console.log(`\n🔒 Pinta Mock Server running on http://localhost:${PORT}`);
-  console.log(`   Token: ${API_KEY}`);
-  console.log(`   Rules: ${rules.length} rules loaded`);
+  console.log(`\n📦 Mock OTLP Collector running on http://localhost:${PORT}`);
   console.log(`\n   UI:        http://localhost:${PORT}/`);
+  console.log(`   Traces:    POST http://localhost:${PORT}/traces`);
   console.log(`   Events:    http://localhost:${PORT}/api/events/list`);
-  console.log(`   Health:    http://localhost:${PORT}/api/health`);
-  console.log(`   Rules:     http://localhost:${PORT}/api/rules`);
   console.log(`\n   Waiting for events...\n`);
 });

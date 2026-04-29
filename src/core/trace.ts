@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import type { PintaConfig } from "./config.js";
+import type { PintaCodexConfig } from "./config.js";
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -28,7 +28,7 @@ function generateUlid(): string {
 export class TraceManager {
   private tracePath: string;
 
-  constructor(config: PintaConfig) {
+  constructor(config: PintaCodexConfig) {
     this.tracePath = config.tracePath;
   }
 

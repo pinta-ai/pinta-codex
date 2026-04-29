@@ -1,7 +1,7 @@
 {
   "name": "pinta-codex",
-  "version": "1.0.0",
-  "description": "Security monitoring plugin that forwards Codex hook events to a Pinta trace endpoint",
+  "version": "1.2.0",
+  "description": "Generic OTLP forwarder for Codex hook events",
   "author": {
     "name": "Pinta AI",
     "email": "support@pinta.sh",
@@ -12,16 +12,15 @@
   "license": "SEE LICENSE IN ../LICENSE",
   "keywords": [
     "codex",
-    "security",
+    "opentelemetry",
     "observability",
-    "otlp",
-    "pinta"
+    "otlp"
   ],
   "hooks": "./hooks.json",
   "interface": {
     "displayName": "Pinta Codex",
-    "shortDescription": "Forward Codex hook events to Pinta",
-    "longDescription": "Captures Codex hook events, resolves Pinta identity, converts them to OTLP spans, and sends them to a trace endpoint with retry queueing.",
+    "shortDescription": "Forward Codex hook events to any OTLP/HTTP collector",
+    "longDescription": "Captures Codex hook events, converts them to OTLP spans, and sends them to any OTLP/HTTP traces collector. Use with Pinta Manager for managed identity attribution, or any OTel pipeline of your choice.",
     "developerName": "Pinta AI",
     "category": "Productivity",
     "capabilities": [
