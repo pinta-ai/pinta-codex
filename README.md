@@ -6,7 +6,16 @@ Generic OTLP forwarder for Codex hook events.
 > **pinta-cc와의 차이:** [`docs/codex-vs-claude-code.md`](./docs/codex-vs-claude-code.md)
 > 이 README는 개발자 관점 개요입니다.
 
-## Quick start
+## Channels
+
+두 채널이 병행 운영됩니다. `~/.codex/hooks.json` 의 absolute-path prefix 로 구분되어 같은 머신에서 공존 가능합니다.
+
+| Channel | 사용자 | 설치 |
+|---------|-------|------|
+| **Pinta Manager** (v0.2+) | Pinta 사용자 | catalog 가 npm tarball install → manager root prefix 로 hooks.json entry 자동 등록. **manual setup 불필요.** |
+| **Git clone + npm run setup** | OSS / standalone | 아래 Quick start 참조. `~/.codex/pinta-codex.env` 에 직접 endpoint/token 작성. |
+
+## Quick start (OSS / standalone)
 
 ```bash
 git clone https://github.com/awarecorp/pinta-codex.git
@@ -159,6 +168,14 @@ printf 'http://localhost:3000\n\n' | npm run setup
 - `PINTA_CODEX_ENDPOINT` / `PINTA_CODEX_API_KEY` → `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` (legacy 키는 backward-compat 으로 인식되며 다음 `npm run setup` 시 자동 마이그레이션)
 - PreToolUse fail-close 제거. 모든 hook 은 exit 0 on success
 - `member.identity.*` resource attribute 제거
+
+### 마이그레이션 액션
+
+| 채널 | 액션 |
+|------|------|
+| **Pinta Manager v0.2+** | 자동. 다음 reconcile 에 기존 hook entry 가 manager-installed 1.2.0 entry 로 교체되고 `~/.codex/pinta-codex.env` 의 PINTA_* 키는 OTEL_* 로 갱신. |
+| **Git clone (기존 사용자)** | `git pull && npm run setup` 1회 재실행. setup 이 legacy `PINTA_CODEX_*` 키를 OTel 키로 자동 마이그레이션 (.bak 백업). |
+| **재setup 안 함** | hook 자체는 1.0.x/1.1.x 코드 그대로라면 동작 유지. 단 dist/ 가 1.2.0 으로 빌드된 상태에서 PINTA_CODEX_* 만 남아있으면 backward-compat path 로 동작 (재setup 권장). |
 
 ## Repo layout
 
