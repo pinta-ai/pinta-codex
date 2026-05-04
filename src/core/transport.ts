@@ -7,7 +7,7 @@ const TIMEOUT_MS = 5000;
 
 function hintFor(status: number): string {
   if (status === 401 || status === 403) return " — check OTEL_EXPORTER_OTLP_HEADERS";
-  if (status === 404) return " — check OTEL_EXPORTER_OTLP_ENDPOINT path";
+  if (status === 404) return " — check OTEL_EXPORTER_OTLP_TRACES_ENDPOINT path";
   if (status >= 500) return " — collector may be down";
   return "";
 }
@@ -40,10 +40,15 @@ export class Transport {
   }
 
   private async post(payload: OtlpPayload): Promise<boolean> {
+    // Callers (send/flush) already early-return when endpoint is unset, but
+    // TS can't narrow across method calls — assert here.
+    const endpoint = this.config.endpoint;
+    if (!endpoint) return false;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(`${this.config.endpoint}/traces`, {
+      // config.endpoint is the full traces URL (config.ts handles base→full).
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

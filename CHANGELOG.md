@@ -2,6 +2,12 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.2.1] - 2026-04-30
+
+### Changed
+
+- npm package name: `pinta-codex` → `@pinta-ai/pinta-codex` (consistent with `@pinta-ai/types`). git clone flow is unaffected — repository URL `awarecorp/pinta-codex` is unchanged.
+
 ## [1.2.0] - 2026-04-29 (BREAKING)
 
 ### BREAKING CHANGES

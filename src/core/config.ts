@@ -37,12 +37,23 @@ function readEnvFile(p: string): Record<string, string> {
 }
 
 function resolveEndpoint(envFile: Record<string, string>): string | undefined {
-  return process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-    ?? envFile.OTEL_EXPORTER_OTLP_ENDPOINT
-    ?? process.env.PINTA_CODEX_ENDPOINT          // legacy
-    ?? envFile.PINTA_CODEX_ENDPOINT              // legacy
-    ?? process.env.CLAUDE_PLUGIN_OPTION_ENDPOINT // parity
-    ?? undefined;
+  // Per OTel spec:
+  //   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = full URL (use as-is)
+  //   OTEL_EXPORTER_OTLP_ENDPOINT        = base URL (append /v1/traces)
+  // We treat values from manager (and the user-facing parity vars) as full URLs.
+  const tracesEndpoint =
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ??
+    envFile.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  if (tracesEndpoint) return tracesEndpoint;
+  const baseEndpoint =
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
+    envFile.OTEL_EXPORTER_OTLP_ENDPOINT;
+  if (baseEndpoint) return baseEndpoint.replace(/\/+$/, "") + "/v1/traces";
+  return (
+    process.env.PINTA_CODEX_ENDPOINT ??       // legacy (full URL)
+    envFile.PINTA_CODEX_ENDPOINT ??           // legacy
+    process.env.CLAUDE_PLUGIN_OPTION_ENDPOINT // parity (full URL)
+  );
 }
 
 function resolveHeaders(envFile: Record<string, string>): string | undefined {
