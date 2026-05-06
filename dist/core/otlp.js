@@ -145,6 +145,16 @@ function resourceAttrs() {
 function buildOtlpPayload(args) {
     const ts = args.now ?? Date.now();
     const tsNano = (BigInt(ts) * 1000000n).toString();
+    const attrs = flattenEvent(args.event);
+    if (args.guard) {
+        attrs.push({ key: 'pinta.guard.decision', value: { stringValue: args.guard.decision.toLowerCase() } }, { key: 'pinta.guard.duration_ms', value: { intValue: args.guard.durationMs } });
+        if (args.guard.reason) {
+            attrs.push({ key: 'pinta.guard.matched_rule', value: { stringValue: args.guard.reason } });
+        }
+        if (args.guard.failOpenReason) {
+            attrs.push({ key: 'pinta.guard.fail_open_reason', value: { stringValue: args.guard.failOpenReason } });
+        }
+    }
     const span = {
         traceId: ulidToTraceId(args.traceId),
         spanId: newSpanId(),
@@ -152,7 +162,7 @@ function buildOtlpPayload(args) {
         kind: 1, // SPAN_KIND_INTERNAL
         startTimeUnixNano: tsNano,
         endTimeUnixNano: tsNano,
-        attributes: flattenEvent(args.event),
+        attributes: attrs,
     };
     return {
         resourceSpans: [

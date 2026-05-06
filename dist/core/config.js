@@ -95,6 +95,15 @@ function loadConfig() {
     const envFile = node_fs_1.default.existsSync(envFilePath) ? readEnvFile(envFilePath) : {};
     const endpoint = resolveEndpoint(envFile);
     const headersRaw = resolveHeaders(envFile);
+    // Plan 5: expose relay token for guard.ts (~/guard/evaluate auth header).
+    // Parse x-pinta-relay-token from the resolved OTEL headers string so guard.ts
+    // can read it from process.env.PINTA_RELAY_TOKEN (same as pinta-cc pattern).
+    if (headersRaw && !process.env.PINTA_RELAY_TOKEN) {
+        const tokenMatch = headersRaw.match(/x-pinta-relay-token=([^,\s]+)/i);
+        if (tokenMatch) {
+            process.env.PINTA_RELAY_TOKEN = tokenMatch[1];
+        }
+    }
     return {
         pluginRoot,
         pluginData,

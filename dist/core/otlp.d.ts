@@ -1,4 +1,5 @@
 import type { BaseEvent } from "./types.js";
+import type { GuardResult } from "./guard.js";
 export interface OtlpAttribute {
     key: string;
     value: {
@@ -48,6 +49,7 @@ export declare function buildOtlpPayload(args: {
     event: BaseEvent;
     traceId: string;
     now?: number;
+    guard?: GuardResult | null;
 }): OtlpPayload;
 /**
  * Combine multiple per-hook payloads into a single OTLP payload by
