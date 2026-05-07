@@ -9,7 +9,9 @@ export async function handlePreToolUse(
   event: PreToolUseEvent,
   config: PintaCodexConfig,
 ): Promise<number> {
-  const guardEndpoint = process.env.PINTA_GUARD_ENDPOINT;
+  // codex CLI doesn't inject pinta-codex.env into hook env; config.guardEndpoint
+  // already merges process.env + envFile fallback (1.2.4).
+  const guardEndpoint = config.guardEndpoint;
   const rawToolInput = typeof event.tool_input === 'string'
     ? event.tool_input
     : JSON.stringify(event.tool_input);
