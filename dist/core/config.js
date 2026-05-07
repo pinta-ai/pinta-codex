@@ -104,12 +104,18 @@ function loadConfig() {
             process.env.PINTA_RELAY_TOKEN = tokenMatch[1];
         }
     }
+    // Plan 5 v1.2.4: codex CLI does NOT inject pinta-codex.env into hook
+    // subprocess env (unlike Claude Code's settings.json env-prefix). The hook
+    // must read PINTA_GUARD_ENDPOINT from envFile too — not just process.env.
+    // Same pattern as resolveEndpoint/resolveHeaders above.
+    const guardEndpoint = process.env.PINTA_GUARD_ENDPOINT ?? envFile.PINTA_GUARD_ENDPOINT;
     return {
         pluginRoot,
         pluginData,
         tracePath: node_path_1.default.join(pluginData, "trace.json"),
         endpoint: endpoint?.replace(/\/+$/, ""),
         headers: parseHeadersString(headersRaw ?? ""),
+        guardEndpoint,
     };
 }
 /** Returns true if OTel endpoint is configured (signal to silently disable telemetry). */

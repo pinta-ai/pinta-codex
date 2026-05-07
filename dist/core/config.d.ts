@@ -4,6 +4,8 @@ export interface PintaCodexConfig {
     tracePath: string;
     endpoint?: string;
     headers: Record<string, string>;
+    /** Plan 5: manager-local guard endpoint (or undefined → guard skipped). */
+    guardEndpoint?: string;
 }
 export declare function loadConfig(): PintaCodexConfig;
 /** Returns true if OTel endpoint is configured (signal to silently disable telemetry). */
