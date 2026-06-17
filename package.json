@@ -1,17 +1,17 @@
 {
   "name": "@pinta-ai/pinta-codex",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Generic OTLP forwarder for Codex hook events",
   "main": "dist/index.js",
   "license": "SEE LICENSE IN ./LICENSE",
   "author": "Pinta AI (https://pinta.sh)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/awarecorp/pinta-codex.git"
+    "url": "git+https://github.com/pinta-ai/pinta-codex.git"
   },
-  "homepage": "https://github.com/awarecorp/pinta-codex",
+  "homepage": "https://github.com/pinta-ai/pinta-codex",
   "bugs": {
-    "url": "https://github.com/awarecorp/pinta-codex/issues"
+    "url": "https://github.com/pinta-ai/pinta-codex/issues"
   },
   "files": [
     "dist",
@@ -23,6 +23,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
+    "bump": "node scripts/bump.mjs",
     "build": "tsc",
     "dev": "tsc --watch",
     "setup": "npx tsx tools/setup.ts",

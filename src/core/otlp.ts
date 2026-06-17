@@ -4,7 +4,7 @@ import type { BaseEvent } from "./types.js";
 import { redact, truncate } from "./redact.js";
 import type { GuardResult } from "./guard.js";
 
-const PLUGIN_VERSION = "1.2.0"; // keep in sync with .codex-plugin/plugin.json
+const PLUGIN_VERSION = "1.3.1"; // keep in sync with .codex-plugin/plugin.json
 
 /**
  * Resolve the Codex CLI version from an explicit env if present.
