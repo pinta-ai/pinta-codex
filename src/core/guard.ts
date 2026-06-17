@@ -14,6 +14,11 @@ export interface GuardResult {
 
 const TIMEOUT_MS = 50;
 
+// Self-identify to the manager's guard route so it can attribute calls to this
+// adaptor (the route parses `pinta-*/<version>` out of the User-Agent). Keep the
+// version in sync with package.json.
+const GUARD_UA = 'pinta-codex/1.3.0';
+
 function sleep(ms: number): Promise<never> {
   return new Promise((_, reject) =>
     setTimeout(() => {
@@ -37,6 +42,7 @@ export async function evaluateGuard(
         method: 'POST',
         headers: {
           'content-type': 'application/json',
+          'user-agent': GUARD_UA,
           'x-pinta-relay-token': process.env.PINTA_RELAY_TOKEN ?? '',
         },
         body: JSON.stringify({ input }),
