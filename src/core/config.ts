@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { parseHeadersEnv } from "@pinta-ai/core";
 
 export interface PintaCodexConfig {
   pluginRoot: string;
@@ -76,16 +77,6 @@ function resolveHeaders(envFile: Record<string, string>): string | undefined {
   return undefined;
 }
 
-function parseHeadersString(raw: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!raw) return out;
-  for (const pair of raw.split(",")) {
-    const [k, ...rest] = pair.split("=");
-    if (k && rest.length > 0) out[k.trim()] = rest.join("=").trim();
-  }
-  return out;
-}
-
 export function loadConfig(): PintaCodexConfig {
   const pluginRoot = process.env.CODEX_PLUGIN_ROOT
     ?? process.env.CLAUDE_PLUGIN_ROOT
@@ -122,7 +113,7 @@ export function loadConfig(): PintaCodexConfig {
     pluginData,
     tracePath: path.join(pluginData, "trace.json"),
     endpoint: endpoint?.replace(/\/+$/, ""),
-    headers: parseHeadersString(headersRaw ?? ""),
+    headers: parseHeadersEnv(headersRaw ?? ""),
     guardEndpoint,
   };
 }

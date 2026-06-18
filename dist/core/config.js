@@ -8,6 +8,7 @@ exports.hasOtlpEndpoint = hasOtlpEndpoint;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
+const core_1 = require("@pinta-ai/core");
 function readEnvFile(p) {
     const out = {};
     let content;
@@ -72,17 +73,6 @@ function resolveHeaders(envFile) {
     }
     return undefined;
 }
-function parseHeadersString(raw) {
-    const out = {};
-    if (!raw)
-        return out;
-    for (const pair of raw.split(",")) {
-        const [k, ...rest] = pair.split("=");
-        if (k && rest.length > 0)
-            out[k.trim()] = rest.join("=").trim();
-    }
-    return out;
-}
 function loadConfig() {
     const pluginRoot = process.env.CODEX_PLUGIN_ROOT
         ?? process.env.CLAUDE_PLUGIN_ROOT
@@ -114,7 +104,7 @@ function loadConfig() {
         pluginData,
         tracePath: node_path_1.default.join(pluginData, "trace.json"),
         endpoint: endpoint?.replace(/\/+$/, ""),
-        headers: parseHeadersString(headersRaw ?? ""),
+        headers: (0, core_1.parseHeadersEnv)(headersRaw ?? ""),
         guardEndpoint,
     };
 }
