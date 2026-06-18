@@ -1,10 +1,5 @@
+import { TraceManager as CoreTraceManager } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "./config.js";
-export declare class TraceManager {
-    private tracePath;
+export declare class TraceManager extends CoreTraceManager {
     constructor(config: PintaCodexConfig);
-    /** Start a new trace for each user prompt hook. */
-    newTrace(): string;
-    /** Return the current trace id, creating one when needed. */
-    currentTrace(): string;
-    private save;
 }
