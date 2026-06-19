@@ -1,9 +1,7 @@
 import type { PintaCodexConfig } from "../core/config.js";
-import type { PreToolUseEvent } from "../core/types.js";
-import { Transport } from "../core/transport.js";
-import { TraceManager } from "../core/trace.js";
-import { buildOtlpPayload } from "../core/otlp.js";
+import type { HookBlockOutput, PreToolUseEvent } from "../core/types.js";
 import { evaluateGuard } from "../core/guard.js";
+import { emitEvent } from "./emit.js";
 
 export async function handlePreToolUse(
   event: PreToolUseEvent,
@@ -11,35 +9,30 @@ export async function handlePreToolUse(
 ): Promise<number> {
   // codex CLI doesn't inject pinta-codex.env into hook env; config.guardEndpoint
   // already merges process.env + envFile fallback (1.2.4).
-  const guardEndpoint = config.guardEndpoint;
-  const rawToolInput = typeof event.tool_input === 'string'
+  const rawToolInput = typeof event.tool_input === "string"
     ? event.tool_input
     : JSON.stringify(event.tool_input);
   const guard = await evaluateGuard(
     {
-      spanId: event.session_id ?? 'unknown',
+      spanId: event.session_id ?? "unknown",
       toolName: event.tool_name,
       toolInput: event.tool_input,
       rawTextFields: { toolInput: rawToolInput },
     },
-    guardEndpoint,
+    config.guardEndpoint,
   );
 
-  const transport = new Transport(config);
-  await transport.flush();
-  const traceId = new TraceManager(config).currentTrace();
-  const payload = buildOtlpPayload({ event, traceId, guard });
-  await transport.send(payload);
+  await emitEvent(event, config, { trace: "current", guard });
 
-  if (guard?.decision === 'DENY') {
-    const out = {
+  if (guard?.decision === "DENY") {
+    const out: HookBlockOutput = {
       hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny' as const,
-        permissionDecisionReason: guard.reason ?? 'guard_deny',
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: guard.reason ?? "guard_deny",
       },
     };
-    process.stdout.write(JSON.stringify(out) + '\n');
+    process.stdout.write(JSON.stringify(out) + "\n");
   }
   return 0;
 }
