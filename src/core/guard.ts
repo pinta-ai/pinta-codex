@@ -16,6 +16,10 @@ export interface GuardResult {
   decision: 'ALLOW' | 'DENY' | 'REVIEW';
   reason: string | null;
   durationMs: number;
+  // Wall-clock RTT (ms) core measured for the guard call. Carried through the
+  // down-projection below so core's buildPayload can emit pinta.client.rtt_ms;
+  // dropping it would silently disable that attribute.
+  clientRttMs?: number;
   failOpenReason?: 'timeout' | 'refused' | 'error';
 }
 
@@ -24,7 +28,7 @@ const TIMEOUT_MS = 50;
 // Self-identify to the manager's guard route so it can attribute calls to this
 // adaptor (the route parses `pinta-*/<version>` out of the User-Agent). Keep the
 // version in sync with package.json.
-const GUARD_UA = 'pinta-codex/1.3.1';
+const GUARD_UA = 'pinta-codex/1.4.0';
 
 export async function evaluateGuard(
   input: GuardInput,
@@ -42,6 +46,7 @@ export async function evaluateGuard(
     decision: result.decision,
     reason: result.reason,
     durationMs: result.durationMs,
+    clientRttMs: result.clientRttMs,
   };
   if (result.failOpenReason !== undefined) out.failOpenReason = result.failOpenReason;
   return out;
