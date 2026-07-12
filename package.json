@@ -3,6 +3,12 @@
   "version": "1.4.0",
   "description": "Generic OTLP forwarder for Codex hook events",
   "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
   "license": "SEE LICENSE IN ./LICENSE",
   "author": "Pinta AI (https://pinta.sh)",
   "repository": {
@@ -24,7 +30,10 @@
   ],
   "scripts": {
     "bump": "node scripts/bump.mjs",
-    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --format=cjs --target=node18 --minify --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && npm run build:cjs && npm run build:esm",
+    "build:cjs": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node18 --minify --outfile=dist/index.js",
+    "build:esm": "esbuild src/index.mts --bundle --platform=node --format=esm --target=node18 --minify --banner:js=\"import{createRequire as __pintaCreateRequire}from 'node:module';const require=__pintaCreateRequire(import.meta.url);\" --outfile=dist/index.mjs",
     "dev": "tsc --watch",
     "setup": "npx tsx tools/setup.ts",
     "doctor": "npx tsx tools/doctor.ts",
@@ -35,6 +44,7 @@
     "test:redact": "npx tsx tools/test-redact.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:import": "node scripts/smoke-import.mjs",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
