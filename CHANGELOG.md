@@ -2,6 +2,37 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.4.0] - 2026-07-12
+
+### Changed
+
+- Low-level utilities consolidated into the shared private `@pinta-ai/core`
+  package (`^0.3.0`, devDependency). `src/core/*` keeps thin adaptor bindings;
+  core is **bundled + minified into `dist/` by esbuild at build time**, so npmjs
+  consumers never need private-registry access and `dist/` carries no runtime
+  `@pinta-ai/core` dependency.
+
+### Added
+
+- `pinta.client.rtt_ms` / `pinta.client.op` span attributes on PreToolUse spans.
+  `buildOtlpPayload` already forwards its `guard` result into core's
+  `buildPayload`, and core `0.3.0` derives the client-call timing from the
+  `GuardResult.clientRttMs` it now measures. The manager can only time its own
+  handler, so `clientRttMs - durationMs` gives it the transport overhead.
+
+### Fixed
+
+- `package-lock.json` resolved `@pinta-ai/core` as a `link:` to a local
+  `../pinta-core` checkout. `npm ci` created a dangling symlink in CI and the
+  build failed with `TS2307: Cannot find module '@pinta-ai/core'`. It is now
+  pinned to core's GitHub Packages tarball URL + integrity hash.
+- `publish` workflow: npm pinned to `11.18.0` (npm@latest is 12.x and requires
+  node >=22.22, but the job runs node 20).
+- `publish` workflow: restored OIDC trusted publishing. The committed `.npmrc`
+  pointed npmjs auth at `${NPM_TOKEN}`, but no such secret exists — it expanded
+  to an empty token and would have failed `npm publish` with ENEEDAUTH.
+  `NODE_AUTH_TOKEN` is now scoped to the `npm ci` step alone.
+
 ## [1.2.1] - 2026-04-30
 
 ### Changed

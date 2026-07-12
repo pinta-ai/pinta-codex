@@ -1,17 +1,11 @@
 import type { PintaCodexConfig } from "../core/config.js";
 import type { UserPromptSubmitEvent } from "../core/types.js";
-import { Transport } from "../core/transport.js";
-import { TraceManager } from "../core/trace.js";
-import { buildOtlpPayload } from "../core/otlp.js";
+import { emitEvent } from "./emit.js";
 
 export async function handleUserPrompt(
   event: UserPromptSubmitEvent,
   config: PintaCodexConfig,
 ): Promise<number> {
-  const transport = new Transport(config);
-  await transport.flush();
-  const traceId = new TraceManager(config).newTrace(); // NEW trace per user turn
-  const payload = buildOtlpPayload({ event, traceId });
-  await transport.send(payload);
+  await emitEvent(event, config, { trace: "new" }); // NEW trace per user turn
   return 0;
 }

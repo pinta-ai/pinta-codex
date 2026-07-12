@@ -1,6 +1,6 @@
 {
   "name": "@pinta-ai/pinta-codex",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Generic OTLP forwarder for Codex hook events",
   "main": "dist/index.js",
   "license": "SEE LICENSE IN ./LICENSE",
@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "bump": "node scripts/bump.mjs",
-    "build": "tsc",
+    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --format=cjs --target=node18 --minify --outfile=dist/index.js",
     "dev": "tsc --watch",
     "setup": "npx tsx tools/setup.ts",
     "doctor": "npx tsx tools/doctor.ts",
@@ -34,11 +34,18 @@
     "test:otlp": "npx tsx tools/test-otlp.ts",
     "test:redact": "npx tsx tools/test-redact.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@pinta-ai/core": "^0.3.0",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   }
 }
