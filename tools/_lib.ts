@@ -29,6 +29,9 @@ export interface HookMatcher {
 }
 export interface HooksFile {
   hooks: Record<string, HookMatcher[]>;
+  // Preserve any other top-level keys a user may have in their hooks.json;
+  // the merge/strip helpers pass these through untouched.
+  [key: string]: unknown;
 }
 
 // --- JSON helpers ---
@@ -38,6 +41,39 @@ export function readJson<T>(p: string, fallback: T): T {
     return JSON.parse(fs.readFileSync(p, "utf-8")) as T;
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * Read + parse a JSON config file that may legitimately be absent.
+ *
+ *   - missing file (ENOENT)     → return `fallback` (fresh install)
+ *   - present but unparseable   → THROW a clear error (never fall back)
+ *   - other read error          → rethrow
+ *
+ * Unlike {@link readJson}, this refuses to silently substitute the fallback
+ * when the file EXISTS but can't be parsed. Callers that merge-then-write-back
+ * (setup / install-hooks / uninstall-hooks) must abort here instead of
+ * clobbering a user's slightly-corrupt config (trailing comma / BOM) and
+ * wiping their other hooks.
+ */
+export function readJsonAllowMissing<T>(p: string, fallback: T): T {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(p, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return fallback;
+    throw err;
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `${p} exists but is not valid JSON (${detail}).\n` +
+        `Refusing to overwrite it — that would discard your other Codex hooks. ` +
+        `Fix or remove the file, then re-run.`,
+    );
   }
 }
 
@@ -223,7 +259,9 @@ export function mergeHooks(
   existing: HooksFile,
   incoming: HooksFile,
 ): { next: HooksFile; staleRemoved: number } {
-  const merged: HooksFile = { hooks: { ...existing.hooks } };
+  // Spread `existing` first so unknown top-level keys survive the merge;
+  // then override `hooks` with a shallow copy we can mutate.
+  const merged: HooksFile = { ...existing, hooks: { ...existing.hooks } };
   let staleRemoved = 0;
   for (const [eventName, incomingMatchers] of Object.entries(incoming.hooks)) {
     const current = merged.hooks[eventName] ?? [];
@@ -244,7 +282,8 @@ export function stripPintaCodex(existing: HooksFile): {
   next: HooksFile;
   removed: number;
 } {
-  const cleaned: HooksFile = { hooks: {} };
+  // Preserve unknown top-level keys; rebuild only the `hooks` map.
+  const cleaned: HooksFile = { ...existing, hooks: {} };
   let removed = 0;
   for (const [eventName, matchers] of Object.entries(existing.hooks)) {
     const next = matchers
