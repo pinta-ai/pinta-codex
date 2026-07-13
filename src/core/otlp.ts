@@ -12,6 +12,24 @@ import {
   type OtlpPayload,
 } from "@pinta-ai/core";
 
+// os.userInfo() throws when the running uid has no /etc/passwd entry (containers
+// with an arbitrary uid, some CI runners, service/launchd accounts). Memoize a
+// safe lookup so resource attributes never abort span construction.
+let cachedProcessOwner: string | undefined;
+function processOwner(): string {
+  if (cachedProcessOwner === undefined) {
+    try {
+      cachedProcessOwner = os.userInfo().username;
+    } catch {
+      cachedProcessOwner =
+        process.env.USER ??
+        process.env.LOGNAME ??
+        (typeof process.getuid === "function" ? String(process.getuid()) : "unknown");
+    }
+  }
+  return cachedProcessOwner;
+}
+
 // OTLP envelope + the redaction-aware attribute pipeline now live in
 // @pinta-ai/core. This module keeps only the codex-specific bits: event
 // flattening (incl. the `ingest.type` discriminator), resource attributes, CLI
@@ -85,7 +103,7 @@ function resourceAttrs(): OtlpAttribute[] {
     { key: "telemetry.sdk.language", value: { stringValue: "nodejs" } },
     { key: "telemetry.sdk.version", value: { stringValue: PLUGIN_VERSION } },
     { key: "process.pid", value: { intValue: process.pid } },
-    { key: "process.owner", value: { stringValue: os.userInfo().username } },
+    { key: "process.owner", value: { stringValue: processOwner() } },
     { key: "host.name", value: { stringValue: os.hostname() } },
     { key: "host.arch", value: { stringValue: os.arch() } },
   ];
