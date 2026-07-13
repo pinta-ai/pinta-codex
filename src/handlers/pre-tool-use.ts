@@ -22,8 +22,10 @@ export async function handlePreToolUse(
     config.guardEndpoint,
   );
 
-  await emitEvent(event, config, { trace: "current", guard });
-
+  // Emit the security decision to stdout BEFORE telemetry. Telemetry is
+  // best-effort: a throw from emitEvent must never discard an already-computed
+  // DENY (the outer runHook catch is fail-open, so a late throw would silently
+  // ALLOW a denied tool).
   if (guard?.decision === "DENY") {
     const out: HookBlockOutput = {
       hookSpecificOutput: {
@@ -33,6 +35,12 @@ export async function handlePreToolUse(
       },
     };
     process.stdout.write(JSON.stringify(out) + "\n");
+  }
+
+  try {
+    await emitEvent(event, config, { trace: "current", guard });
+  } catch (err) {
+    process.stderr.write(`[pinta-codex] telemetry emit failed: ${err}\n`);
   }
   return 0;
 }
