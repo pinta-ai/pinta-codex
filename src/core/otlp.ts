@@ -19,7 +19,7 @@ import {
 export { mergeBatch };
 export type { OtlpPayload, OtlpAttribute };
 
-const PLUGIN_VERSION = "1.5.0"; // keep in sync with .codex-plugin/plugin.json
+const PLUGIN_VERSION = "1.6.0"; // keep in sync with .codex-plugin/plugin.json
 
 /**
  * Resolve the Codex CLI version from an explicit env if present.
