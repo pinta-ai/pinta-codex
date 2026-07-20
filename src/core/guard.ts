@@ -28,7 +28,7 @@ const TIMEOUT_MS = 50;
 // Self-identify to the manager's guard route so it can attribute calls to this
 // adaptor (the route parses `pinta-*/<version>` out of the User-Agent). Keep the
 // version in sync with package.json.
-const GUARD_UA = 'pinta-codex/1.5.0';
+const GUARD_UA = 'pinta-codex/1.5.1';
 
 export async function evaluateGuard(
   input: GuardInput,
