@@ -30,7 +30,7 @@ import {
   mergeHooks,
   migrateLegacyEnvKeys,
   readEnvFile,
-  readJson,
+  readJsonAllowMissing,
   writeEnvFile,
   type HooksFile,
 } from "./_lib.js";
@@ -142,7 +142,7 @@ async function stepConfigToml(): Promise<void> {
 async function stepHooks(): Promise<void> {
   heading("4. Register hooks");
   const incoming = loadResolvedTemplate();
-  const existing: HooksFile = readJson(CODEX_HOOKS_PATH, { hooks: {} });
+  const existing: HooksFile = readJsonAllowMissing(CODEX_HOOKS_PATH, { hooks: {} });
   const { next: merged, staleRemoved } = mergeHooks(existing, incoming);
   const serialized = JSON.stringify(merged, null, 2) + "\n";
   const previous = fs.existsSync(CODEX_HOOKS_PATH)

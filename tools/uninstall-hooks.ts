@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import {
   CODEX_HOOKS_PATH,
-  readJson,
+  readJsonAllowMissing,
   stripPintaCodex,
   type HooksFile,
 } from "./_lib.js";
@@ -20,7 +20,7 @@ function main(): void {
     process.stdout.write(`[uninstall-hooks] nothing to do: ${CODEX_HOOKS_PATH} does not exist\n`);
     return;
   }
-  const existing: HooksFile = readJson(CODEX_HOOKS_PATH, { hooks: {} });
+  const existing: HooksFile = readJsonAllowMissing(CODEX_HOOKS_PATH, { hooks: {} });
   const { next, removed } = stripPintaCodex(existing);
   const serialized = JSON.stringify(next, null, 2) + "\n";
 
@@ -36,4 +36,11 @@ function main(): void {
   process.stdout.write(`[uninstall-hooks] removed ${removed} entries from ${CODEX_HOOKS_PATH}\n`);
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  process.stderr.write(
+    `[uninstall-hooks] ${err instanceof Error ? err.message : String(err)}\n`,
+  );
+  process.exit(1);
+}

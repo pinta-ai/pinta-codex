@@ -18,7 +18,7 @@ import {
   PLUGIN_ENTRY,
   loadResolvedTemplate,
   mergeHooks,
-  readJson,
+  readJsonAllowMissing,
   type HooksFile,
 } from "./_lib.js";
 
@@ -34,7 +34,7 @@ function main(): void {
   }
 
   const incoming = loadResolvedTemplate();
-  const existing: HooksFile = readJson(CODEX_HOOKS_PATH, { hooks: {} });
+  const existing: HooksFile = readJsonAllowMissing(CODEX_HOOKS_PATH, { hooks: {} });
   const { next: merged, staleRemoved } = mergeHooks(existing, incoming);
   const serialized = JSON.stringify(merged, null, 2) + "\n";
 
@@ -68,4 +68,11 @@ function main(): void {
   process.stdout.write(`[install-hooks] plugin entry: ${PLUGIN_ENTRY}\n`);
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  process.stderr.write(
+    `[install-hooks] ${err instanceof Error ? err.message : String(err)}\n`,
+  );
+  process.exit(1);
+}
