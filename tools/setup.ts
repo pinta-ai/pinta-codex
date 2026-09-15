@@ -7,7 +7,7 @@
  *   1. Builds dist/  (runs tsc if dist/index.js missing or --rebuild)
  *   2. Prompts for OTLP endpoint & headers (migrates legacy keys if present)
  *   3. Writes them to ~/.codex/pinta-codex.env
- *   4. Enables `codex_hooks = true` in ~/.codex/config.toml (idempotent)
+ *   4. Enables `hooks = true` in ~/.codex/config.toml (idempotent; no-op on modern codex)
  *   5. Merges this plugin's hooks into ~/.codex/hooks.json with absolute paths
  *   6. Prints a summary of what to run next
  *
@@ -122,7 +122,7 @@ async function stepEnv(ask: AskFn): Promise<{ endpoint: string; headers: string 
 }
 
 async function stepConfigToml(): Promise<void> {
-  heading("3. Enable codex_hooks feature");
+  heading("3. Enable hooks feature");
   let current = "";
   try {
     current = fs.readFileSync(CODEX_CONFIG_PATH, "utf-8");
@@ -131,7 +131,7 @@ async function stepConfigToml(): Promise<void> {
   }
   const { next, changed } = ensureCodexHooksEnabled(current);
   if (!changed) {
-    ok(`codex_hooks already enabled in ${CODEX_CONFIG_PATH}`);
+    ok(`hooks feature already enabled in ${CODEX_CONFIG_PATH}`);
     return;
   }
   fs.mkdirSync(CODEX_HOME, { recursive: true });

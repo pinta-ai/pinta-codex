@@ -1,28 +1,20 @@
 import type { PintaCodexConfig } from "../core/config.js";
 import type { HookBlockOutput, PreToolUseEvent } from "../core/types.js";
-import { evaluateGuard } from "../core/guard.js";
 import { emitEvent } from "./emit.js";
+import { denyReason, evaluateToolGate } from "./tool-gate.js";
 
+/**
+ * Codex's dispatch-path gate, and the primary one.
+ *
+ * Unlike `PermissionRequest` this fires regardless of approval policy, so it is
+ * the only gate present under `--full-auto` and `approval_policy = "never"` —
+ * the modes where nothing else would ask.
+ */
 export async function handlePreToolUse(
   event: PreToolUseEvent,
   config: PintaCodexConfig,
 ): Promise<number> {
-  // codex CLI doesn't inject pinta-codex.env into hook env; config.guardEndpoint
-  // already merges process.env + envFile fallback (1.2.4).
-  const rawToolInput = typeof event.tool_input === "string"
-    ? event.tool_input
-    : JSON.stringify(event.tool_input);
-  const guard = await evaluateGuard(
-    {
-      spanId: event.session_id ?? "unknown",
-      toolName: event.tool_name,
-      method: event.hook_event_name,
-      cwd: event.cwd,
-      toolInput: event.tool_input,
-      rawTextFields: { toolInput: rawToolInput },
-    },
-    config.guardEndpoint,
-  );
+  const guard = await evaluateToolGate(event, config);
 
   // Emit the security decision to stdout BEFORE telemetry. Telemetry is
   // best-effort: a throw from emitEvent must never discard an already-computed
@@ -33,7 +25,7 @@ export async function handlePreToolUse(
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: guard.reason ?? "guard_deny",
+        permissionDecisionReason: denyReason(guard),
       },
     };
     process.stdout.write(JSON.stringify(out) + "\n");

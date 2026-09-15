@@ -2,6 +2,62 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.8.0] - 2026-09-15
+
+### Added
+
+- **PermissionRequest gate.** Codex fires `PermissionRequest` wherever it would
+  otherwise prompt the user — including network access, which `PreToolUse` never
+  sees. It was unhandled, so that whole class of approval was unguarded.
+  Its output envelope is **not** `PreToolUse`'s: the decision is nested as
+  `hookSpecificOutput.decision = {behavior, message}` rather than the flat
+  `permissionDecision` / `permissionDecisionReason` pair. Sending the flat shape
+  parses as a valid envelope carrying no decision, so a deny is dropped with no
+  diagnostic. Both shapes are now typed at the point of use.
+- **All 12 hook events handled**, up from 5. Codex 0.154.0 dispatches
+  `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
+  `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `SubagentStart`,
+  `SubagentStop`, `Stop` and `Interrupt`. The seven that were previously
+  discarded are now forwarded by a single generic observe handler, and
+  `hooks.json` registers all twelve — an event handled in code but absent from
+  that template is never dispatched.
+- `tests/core/self-version.test.ts`, which fails when the embedded version
+  constants drift from `package.json` (see Fixed).
+
+### Changed
+
+- `PreToolUse` and `PermissionRequest` now build their guard request through one
+  shared `evaluateToolGate`, so the two gates cannot drift into different
+  verdicts for the same action.
+- Fail-open is now stated and tested as deliberate rather than left implicit. A
+  guard endpoint that is unreachable or slow allows: an outage in Pinta must not
+  stop an engineer from working.
+
+### Fixed
+
+- **Version misattribution.** `package.json` was 1.7.0 while `GUARD_UA`,
+  `PLUGIN_VERSION` and `.codex-plugin/plugin.json` were all still 1.6.0, so
+  every guard call and every OTLP span was attributed to a version that never
+  shipped. Confirmed live: the sidecar logged
+  `adaptor=pinta-codex ver=1.6.0` from an installation in `.../pinta-codex/1.7.0/`.
+  `scripts/bump.mjs` sets all four in lock-step and exists precisely to prevent
+  this; it had been bypassed.
+- **`doctor` failed on a healthy install.** Codex renamed the feature flag from
+  `codex_hooks` to `hooks`, and the check only recognised the old spelling — so
+  a machine configured with `[features] hooks = true`, with hooks firing
+  normally, was told its install was broken. Both spellings are now accepted.
+- **`setup` wrote the deprecated flag name.** It now writes canonical
+  `hooks = true`, and leaves an existing `codex_hooks = true` alone rather than
+  adding a second key for one setting.
+- Measured on codex-cli 0.154.0 with an isolated `CODEX_HOME`: `hooks` is stage
+  `stable` and effective `true` with no config at all. Enabling it is now a
+  no-op guard for older builds, and an absent key is no longer reported as a
+  fault — only an explicit `false` is, since that is a silent kill switch.
+- README corrected throughout: it claimed five events, `PreToolUse`/`PostToolUse`
+  were "Bash tool only" (untrue since codex 0.134.0, which extended `PreToolUse`
+  to `apply_patch`, MCP calls and every local function tool), and the feature
+  flag was given as `features.codex_hooks`.
+
 ## [1.5.1] - 2026-07-20
 
 ### Changed

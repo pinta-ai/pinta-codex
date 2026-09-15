@@ -152,18 +152,34 @@ export function migrateLegacyEnvKeys(p: string): string[] {
   return renamed;
 }
 
-// --- TOML: minimal, targeted `[features].codex_hooks = true` toggle ---
+// --- TOML: minimal, targeted `[features].hooks = true` toggle ---
 
 /**
- * Ensure `[features] codex_hooks = true` is set in the TOML source.
- * Preserves unrelated content; only touches the features section.
+ * Ensure the hooks feature is enabled in the TOML source.
+ *
+ * `hooks` is the canonical name and the one written. `codex_hooks` was the
+ * pre-0.13x spelling; codex still maps it through `features/src/legacy.rs`, so
+ * an existing `codex_hooks = true` is honoured and left alone rather than
+ * "upgraded" — rewriting a key the user did not ask us to touch is the kind of
+ * edit that loses a config, and both spellings produce the same state.
+ *
+ * Measured on codex-cli 0.154.0 with an isolated `CODEX_HOME`
+ * (`codex features list`):
+ *
+ *     codex_hooks = true   →  hooks  stable  true
+ *     hooks = true         →  hooks  stable  true
+ *     (absent)             →  hooks  stable  true
+ *
+ * The third row is why nothing here is load-bearing any more: the feature
+ * reached `stable` and is on by default. Writing it stays as a no-op guard for
+ * older codex builds and for a config that explicitly set it `false`.
  *
  * Handles:
  *   - no file / empty file  → append section
  *   - no [features] section → append section
- *   - [features] present, key missing → insert key
- *   - key present with different value → replace value
- *   - key already true → no change
+ *   - [features] present, either key already true → no change
+ *   - `hooks` present with a different value → replace value
+ *   - neither key present → insert `hooks = true`
  */
 export function ensureCodexHooksEnabled(content: string): {
   next: string;
@@ -175,7 +191,7 @@ export function ensureCodexHooksEnabled(content: string): {
     const sep = content.length === 0 || content.endsWith("\n") ? "" : "\n";
     const suffix = content.length === 0 ? "" : "\n";
     return {
-      next: content + sep + suffix + "[features]\ncodex_hooks = true\n",
+      next: content + sep + suffix + "[features]\nhooks = true\n",
       changed: true,
     };
   }
@@ -186,11 +202,16 @@ export function ensureCodexHooksEnabled(content: string): {
   const sectionEnd = nextSection ? sectionStart + nextSection.index! : content.length;
   const body = content.slice(sectionStart, sectionEnd);
 
-  const keyRe = /^(\s*)codex_hooks\s*=\s*(true|false|"[^"]*"|'[^']*')\s*$/m;
+  // An enabled legacy key is an enabled feature. Adding `hooks = true` beside
+  // it would leave two keys for one setting, which is how a later `disable`
+  // turns off the half the user can see and none of the half that matters.
+  if (LEGACY_HOOKS_TRUE_RE.test(body)) return { next: content, changed: false };
+
+  const keyRe = /^(\s*)hooks\s*=\s*(true|false|"[^"]*"|'[^']*')\s*$/m;
   const keyMatch = body.match(keyRe);
   if (keyMatch) {
     if (keyMatch[2] === "true") return { next: content, changed: false };
-    const replaced = body.replace(keyRe, `${keyMatch[1] ?? ""}codex_hooks = true`);
+    const replaced = body.replace(keyRe, `${keyMatch[1] ?? ""}hooks = true`);
     return {
       next: content.slice(0, sectionStart) + replaced + content.slice(sectionEnd),
       changed: true,
@@ -198,13 +219,28 @@ export function ensureCodexHooksEnabled(content: string): {
   }
 
   const sep = body.length === 0 || body.endsWith("\n") ? "" : "\n";
-  const insert = `${sep}codex_hooks = true\n`;
+  const insert = `${sep}hooks = true\n`;
   return {
     next: content.slice(0, sectionStart) + body + insert + content.slice(sectionEnd),
     changed: true,
   };
 }
 
+const LEGACY_HOOKS_TRUE_RE = /^\s*codex_hooks\s*=\s*(true|"true"|'true')\s*$/m;
+
+/**
+ * True when the config explicitly enables hooks under either spelling.
+ *
+ * Reading only `codex_hooks` made this answer `false` for
+ * `[features] hooks = true` — the canonical, working configuration — so
+ * `doctor` reported "not enabled" and exited 1 on machines whose hooks were
+ * firing normally. A health check that fails on a healthy install is worse
+ * than no check: it sends people to edit the one file that was already right.
+ *
+ * `false` no longer means hooks are off. The feature is `stable` and default-on
+ * (see `ensureCodexHooksEnabled`), so callers must treat absence as unremarkable
+ * rather than as a fault.
+ */
 export function isCodexHooksEnabled(content: string): boolean {
   const sectionHeader = /^\[features\]\s*$/m;
   const match = content.match(sectionHeader);
@@ -214,8 +250,20 @@ export function isCodexHooksEnabled(content: string): boolean {
   const nextSection = rest.match(/\n\[[^\]]+\]\s*$/m);
   const sectionEnd = nextSection ? sectionStart + nextSection.index! : content.length;
   const body = content.slice(sectionStart, sectionEnd);
-  const keyRe = /^\s*codex_hooks\s*=\s*(true|"true"|'true')\s*$/m;
-  return keyRe.test(body);
+  return /^\s*hooks\s*=\s*(true|"true"|'true')\s*$/m.test(body) || LEGACY_HOOKS_TRUE_RE.test(body);
+}
+
+/** True when the config explicitly turns hooks off under either spelling. */
+export function isCodexHooksDisabled(content: string): boolean {
+  const sectionHeader = /^\[features\]\s*$/m;
+  const match = content.match(sectionHeader);
+  if (!match) return false;
+  const sectionStart = match.index! + match[0].length;
+  const rest = content.slice(sectionStart);
+  const nextSection = rest.match(/\n\[[^\]]+\]\s*$/m);
+  const sectionEnd = nextSection ? sectionStart + nextSection.index! : content.length;
+  const body = content.slice(sectionStart, sectionEnd);
+  return /^\s*(?:codex_)?hooks\s*=\s*(false|"false"|'false')\s*$/m.test(body);
 }
 
 // --- hooks.json merge ---

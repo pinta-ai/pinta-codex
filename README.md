@@ -1,6 +1,7 @@
 # pinta-codex
 
-Generic OTLP forwarder for Codex hook events.
+Guard and OTLP forwarder for Codex hook events. Blocks dangerous tool calls
+before they run, and forwards every hook event as a span.
 
 > **End-user install guide:** [`docs/installation-guide.md`](./docs/installation-guide.md)
 > **Differences from pinta-cc:** [`docs/codex-vs-claude-code.md`](./docs/codex-vs-claude-code.md)
@@ -30,15 +31,39 @@ npm run doctor     # verify everything green
 
 ## What it captures
 
-All five events that Codex's hook system (experimental; requires `features.codex_hooks = true` in `~/.codex/config.toml`) currently emits are handled.
+Codex 0.154.0 dispatches **twelve** hook events. All twelve are handled: two are
+pre-execution gates that can block, and ten are observed and forwarded.
+
+Hooks require the `hooks` feature in `~/.codex/config.toml`:
+
+```toml
+[features]
+hooks = true
+```
+
+> `codex_hooks` is the pre-0.13x spelling. Codex still accepts it as a legacy
+> alias, but `hooks` is the canonical name and the one to write.
+
+### Gates — these can deny
 
 | Event | Notes |
 |-------|-------|
-| `SessionStart` | health ping + drain retry queue |
-| `UserPromptSubmit` | starts a new ULID trace per user turn |
-| `PreToolUse` | **Bash tool only** (current Codex limitation) |
-| `PostToolUse` | **Bash tool only** (current Codex limitation) |
-| `Stop` | final flush |
+| `PreToolUse` | Every local tool, not just Bash — `apply_patch`, MCP calls and all function tools since 0.134.0 |
+| `PermissionRequest` | Fires when Codex would prompt the user, including for network access |
+
+Both answer through stdout, and their output envelopes are **not the same
+shape** — see `src/core/types.ts`. A deny must carry a non-empty reason; Codex
+rejects one without it. `PreToolUse` accepts only `deny` (an allow is empty
+stdout).
+
+### Observed — forwarded, never block
+
+`PostToolUse`, `PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`,
+`UserPromptSubmit`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`.
+
+`SessionStart` also drains the retry queue; `UserPromptSubmit` starts a new ULID
+trace per user turn; `Stop` performs the final flush. `SessionEnd` is
+send-only — Codex reads no reply from it.
 
 Each invocation spawns `node dist/index.js`, maps the event to a single OTLP span, and POSTs it to `{endpoint}/traces`.
 
@@ -46,7 +71,8 @@ Each invocation spawns `node dist/index.js`, maps the event to a single OTLP spa
 
 - OTLP/HTTP JSON transport. Headers are read from `OTEL_EXPORTER_OTLP_HEADERS` (`key=val,key=val` format)
 - Top-level event fields are flattened into `codex.*` span attributes (Bronze; sibling adaptors use `cc.*`, `mcp.*`)
-- **No fail-close** — every hook exits 0 on success (transmission failures are absorbed by the retry queue)
+- **Telemetry never blocks.** Every hook exits 0, and transmission failures are absorbed by the retry queue. A guard decision travels in stdout, so a dropped span cannot deny and a failed POST cannot stall a turn
+- **Fail-open is deliberate.** If the guard endpoint is unreachable or slow, the gates allow. An outage in Pinta must not stop an engineer from working; the guard is a control, not a dependency
 - Disk-backed retry queue at `.plugin-data/failed-spans.jsonl` (cap 1000). Drained on the next hook invocation
 - One trace per user turn — based on the `UserPromptSubmit` ULID
 
@@ -104,7 +130,7 @@ Add the following manually to `~/.codex/config.toml`:
 
 ```toml
 [features]
-codex_hooks = true
+hooks = true
 ```
 
 > **Why an install script?** Codex does not yet auto-load hooks from `.codex-plugin/plugin.json`. `install-hooks` substitutes `${CODEX_PLUGIN_ROOT}` in the bundled `hooks.json` template with an absolute path and merges it into the user-level file. Once Codex adds plugin-hook auto-discovery, this step will go away.
@@ -121,7 +147,7 @@ For a complete removal:
 
 ```bash
 rm ~/.codex/pinta-codex.env
-# Manually remove the [features] codex_hooks = true line from ~/.codex/config.toml
+# Manually remove the [features] hooks = true line from ~/.codex/config.toml
 ```
 
 ## Local development
@@ -192,10 +218,11 @@ pinta-codex/
 │   └── codex-vs-claude-code.md # UX differences vs pinta-cc
 ├── src/
 │   ├── core/                   # OSS-reusable (config, transport, otlp, redact, retry-queue, trace, types, identity stub)
-│   ├── handlers/               # per-event handlers
+│   ├── handlers/               # per-event handlers (gates + shared tool-gate + generic observe)
 │   └── index.ts                # stdin → type guard → handler dispatch
 ├── tests/
-│   └── core/                   # vitest tests (otlp.test.ts etc.)
+│   ├── core/                   # vitest tests (otlp, hook inventory, self-version)
+│   └── handlers/               # gate output-envelope tests
 ├── tools/
 │   ├── setup.ts                # one-shot interactive installer
 │   ├── doctor.ts               # read-only health check

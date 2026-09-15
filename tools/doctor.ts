@@ -16,6 +16,7 @@ import {
   PLUGIN_ENTRY,
   PLUGIN_ROOT,
   countRegisteredEvents,
+  isCodexHooksDisabled,
   isCodexHooksEnabled,
   readEnvFile,
   readJson,
@@ -92,26 +93,43 @@ function checkEnv(): { endpoint?: string; headers?: string } {
   return { endpoint, headers };
 }
 
+/**
+ * The hooks feature, which is no longer something an install has to turn on.
+ *
+ * Measured on codex-cli 0.154.0 with an isolated `CODEX_HOME`: `hooks` lists as
+ * `stable` and effective `true` with nothing in `config.toml` at all. So an
+ * absent key means "default", not "broken", and failing on it sent people to
+ * edit a file that was already correct.
+ *
+ * An explicit `false` is the one state worth failing on, because that is a
+ * kill switch: every hook stops dispatching and nothing else reports it.
+ */
 function checkCodexHooksFlag(): void {
   let content = "";
   try {
     content = fs.readFileSync(CODEX_CONFIG_PATH, "utf-8");
   } catch {
-    fail(
-      "codex_hooks flag",
+    // Not an error either. codex creates this file on first run, and hooks are
+    // on by default whether or not it exists yet.
+    warn(
+      "hooks feature",
       `${CODEX_CONFIG_PATH} not found`,
-      "Run 'npm run setup' to create it.",
+      "Hooks default to on; run 'npm run setup' if Codex has never been started.",
+    );
+    return;
+  }
+  if (isCodexHooksDisabled(content)) {
+    fail(
+      "hooks feature",
+      "[features] hooks = false — every hook is disabled",
+      "Set hooks = true in config.toml, or run 'npm run setup'.",
     );
     return;
   }
   if (isCodexHooksEnabled(content)) {
-    pass("codex_hooks flag", "[features].codex_hooks = true");
+    pass("hooks feature", "[features] hooks = true");
   } else {
-    fail(
-      "codex_hooks flag",
-      "not enabled in config.toml",
-      "Add [features] codex_hooks = true, or run 'npm run setup'.",
-    );
+    pass("hooks feature", "default (stable, on)");
   }
 }
 
