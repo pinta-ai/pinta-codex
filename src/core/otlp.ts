@@ -1,4 +1,6 @@
+import fs from "fs";
 import os from "os";
+import path from "path";
 import type { BaseEvent } from "./types.js";
 import type { GuardResult } from "./guard.js";
 import {
@@ -40,14 +42,104 @@ export type { OtlpPayload, OtlpAttribute };
 const PLUGIN_VERSION = "1.6.0"; // keep in sync with .codex-plugin/plugin.json
 
 /**
- * Resolve the Codex CLI version from an explicit env if present.
- * Hooks run as short-lived processes, so we keep this intentionally simple.
+ * Resolve the Codex CLI version.
+ *
+ * `CODEX_CLI_VERSION` was the only source this used to read, and it is never
+ * set. Dumping the full environment of a real codex hook child (codex 0.154.0,
+ * `codex exec`) returned 69 variables; the codex-owned ones were exactly:
+ *
+ *   CODEX_HOME                  <session home>
+ *   CODEX_MANAGED_BY_NPM        1
+ *   CODEX_MANAGED_PACKAGE_ROOT  /opt/homebrew/lib/node_modules/@openai/codex
+ *   CODEX_CLI_VERSION           unset    ← the only source this used to read
+ *
+ * The hook payload carries no version either, so `service.version` was the
+ * literal string "unknown" on every span codex ever produced.
+ *
+ * Two real sources exist, in descending order of coverage:
+ *
+ *  1. The rollout transcript. Every hook payload carries `transcript_path`, and
+ *     that file's first record is `{"type":"session_meta","payload":{…,
+ *     "cli_version":"0.154.0",…}}`. This is codex reporting its own version, so
+ *     it holds regardless of how codex was installed.
+ *  2. `CODEX_MANAGED_PACKAGE_ROOT/package.json`. Exact, but npm installs only —
+ *     the variable is absent for the standalone binary.
+ *
+ * `CODEX_CLI_VERSION` is kept last rather than dropped: reading it costs
+ * nothing and it is the name codex would most plausibly adopt later.
+ *
+ * When nothing answers, the attribute is omitted rather than set to
+ * `"unknown"`. A placeholder is indistinguishable from a real value downstream;
+ * the attribute's absence is the honest signal (PTA-347, and the same choice
+ * pinta-copilot makes).
  */
-let cachedCliVersion: string | null = null;
-function getCodexVersion(): string {
-  if (cachedCliVersion !== null) return cachedCliVersion;
-  cachedCliVersion = process.env.CODEX_CLI_VERSION || "unknown";
-  return cachedCliVersion;
+// `null` = resolved and nothing answered; `undefined` = not resolved yet.
+let cachedCliVersion: string | null | undefined;
+
+function nonEmpty(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
+}
+
+// The first line is large — 22 KB in the measured run, because session_meta
+// embeds the full base instructions, and a project's own instruction files push
+// it further — while `cli_version` sits at byte ~296 of it. Hooks are
+// short-lived and latency-sensitive, so read a bounded prefix instead of the
+// file: 256 KB is ~11x the measured first line and still a sub-millisecond read
+// from page cache. If the line does not fit, fall through to the env tiers
+// rather than growing the read.
+const TRANSCRIPT_PREFIX_BYTES = 256 * 1024;
+
+function versionFromTranscript(transcriptPath: string | undefined): string | undefined {
+  if (!transcriptPath) return undefined;
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(transcriptPath, "r");
+    const buf = Buffer.allocUnsafe(TRANSCRIPT_PREFIX_BYTES);
+    const read = fs.readSync(fd, buf, 0, TRANSCRIPT_PREFIX_BYTES, 0);
+    const prefix = buf.toString("utf8", 0, read);
+    const nl = prefix.indexOf("\n");
+    if (nl < 0) return undefined;
+    const first = JSON.parse(prefix.slice(0, nl)) as {
+      type?: string;
+      payload?: { cli_version?: unknown };
+    };
+    if (first?.type !== "session_meta") return undefined;
+    return nonEmpty(first.payload?.cli_version);
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+function versionFromPackageRoot(): string | undefined {
+  const root = nonEmpty(process.env.CODEX_MANAGED_PACKAGE_ROOT);
+  if (!root) return undefined;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      version?: unknown;
+    };
+    return nonEmpty(pkg.version);
+  } catch {
+    return undefined;
+  }
+}
+
+function getCodexVersion(event?: BaseEvent): string | undefined {
+  if (cachedCliVersion === undefined) {
+    cachedCliVersion =
+      versionFromTranscript(nonEmpty(event?.transcript_path)) ??
+      versionFromPackageRoot() ??
+      nonEmpty(process.env.CODEX_CLI_VERSION) ??
+      null;
+  }
+  return cachedCliVersion ?? undefined;
 }
 
 /**
@@ -95,10 +187,14 @@ function flattenEvent(event: BaseEvent): OtlpAttribute[] {
   return out;
 }
 
-function resourceAttrs(): OtlpAttribute[] {
+function resourceAttrs(event?: BaseEvent): OtlpAttribute[] {
+  const version = getCodexVersion(event);
   return [
     { key: "service.name", value: { stringValue: "codex" } },
-    { key: "service.version", value: { stringValue: getCodexVersion() } },
+    // Omitted when unresolved — the absence is the honest signal, not "unknown".
+    ...(version
+      ? [{ key: "service.version", value: { stringValue: version } } as OtlpAttribute]
+      : []),
     { key: "telemetry.sdk.name", value: { stringValue: "pinta-codex" } },
     { key: "telemetry.sdk.language", value: { stringValue: "nodejs" } },
     { key: "telemetry.sdk.version", value: { stringValue: PLUGIN_VERSION } },
@@ -119,7 +215,7 @@ export function buildOtlpPayload(args: {
     traceId: args.traceId,
     spanName: `codex.${snakeCase(args.event.hook_event_name)}`,
     attributes: flattenEvent(args.event),
-    resource: resourceAttrs(),
+    resource: resourceAttrs(args.event),
     scope: { name: "pinta-codex", version: PLUGIN_VERSION },
     now: args.now,
     // codex's GuardResult intentionally omits the `userMessage` field that core
