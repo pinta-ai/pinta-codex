@@ -11,7 +11,9 @@ import path from 'node:path';
  * were `CODEX_HOME`, `CODEX_MANAGED_BY_NPM` and `CODEX_MANAGED_PACKAGE_ROOT`.
  * The hook payload carried no version either.
  *
- * These tests pin the two sources that do exist, and the order between them.
+ * These tests pin the two sources that do exist, the order between them, and
+ * that an unresolved version omits the attribute rather than shipping a
+ * placeholder — "unknown" is indistinguishable from a real value downstream.
  * The fixtures reproduce the shapes as measured, not as imagined:
  *
  *  - the transcript's first record, `{"type":"session_meta","payload":{…,
@@ -110,10 +112,10 @@ describe('codex CLI version resolution', () => {
     expect(await resolve(t)).toBe(MEASURED_VERSION);
   });
 
-  it('is not "unknown" under the environment a real codex hook actually gets', async () => {
+  it('reports a real version under the environment a real codex hook actually gets', async () => {
     // The regression this whole change exists for.
     const t = writeTranscript('rollout.jsonl', sessionMeta(MEASURED_VERSION));
-    expect(await resolve(t)).not.toBe('unknown');
+    expect(await resolve(t)).toBe(MEASURED_VERSION);
   });
 
   it('ignores a first record that is not session_meta', async () => {
@@ -121,7 +123,7 @@ describe('codex CLI version resolution', () => {
       type: 'event_msg',
       payload: { cli_version: '9.9.9' },
     });
-    expect(await resolve(t)).toBe('unknown');
+    expect(await resolve(t)).toBeUndefined();
   });
 
   it('falls back to CODEX_MANAGED_PACKAGE_ROOT when the transcript is absent', async () => {
@@ -143,8 +145,22 @@ describe('codex CLI version resolution', () => {
     expect(await resolve(path.join(tmp, 'does-not-exist.jsonl'))).toBe('1.2.3');
   });
 
-  it('returns "unknown" when no source carries a version', async () => {
-    expect(await resolve(path.join(tmp, 'does-not-exist.jsonl'))).toBe('unknown');
+  it('omits the attribute entirely when no source carries a version', async () => {
+    const buildOtlpPayload = await freshBuild();
+    const payload = buildOtlpPayload({
+      event: {
+        hook_event_name: 'SessionStart',
+        session_id: 'sess-1',
+        transcript_path: path.join(tmp, 'does-not-exist.jsonl'),
+        cwd: '/tmp',
+      } as any,
+      traceId: '01HQXM7Y9YZJ8MK7Z6P3X1V8R0',
+    });
+    const attrs = payload.resourceSpans[0].resource.attributes;
+    // Not "unknown", and not an empty string either: the key must be absent.
+    // A placeholder is indistinguishable from a real value downstream.
+    expect(attrs.find((a: any) => a.key === 'service.version')).toBeUndefined();
+    expect(attrs.find((a: any) => a.key === 'service.name')).toBeDefined();
   });
 
   it('gives up rather than reading an unbounded first line', async () => {
@@ -154,23 +170,23 @@ describe('codex CLI version resolution', () => {
     const huge = sessionMeta(MEASURED_VERSION) as any;
     huge.payload.base_instructions = 'x'.repeat(300 * 1024);
     const t = writeTranscript('rollout.jsonl', huge);
-    expect(await resolve(t)).toBe('unknown');
+    expect(await resolve(t)).toBeUndefined();
   });
 
   it('gives up on a transcript whose first line has no terminator yet', async () => {
     // A session still being written: the record may be partially flushed.
     const t = writeTranscript('rollout.jsonl', sessionMeta(MEASURED_VERSION), false);
-    expect(await resolve(t)).toBe('unknown');
+    expect(await resolve(t)).toBeUndefined();
   });
 
   it('survives a corrupt transcript', async () => {
     const p = path.join(tmp, 'corrupt.jsonl');
     fs.writeFileSync(p, 'not json at all\n');
-    expect(await resolve(p)).toBe('unknown');
+    expect(await resolve(p)).toBeUndefined();
   });
 
   it('survives CODEX_MANAGED_PACKAGE_ROOT pointing nowhere', async () => {
     vi.stubEnv('CODEX_MANAGED_PACKAGE_ROOT', path.join(tmp, 'nope'));
-    expect(await resolve(path.join(tmp, 'does-not-exist.jsonl'))).toBe('unknown');
+    expect(await resolve(path.join(tmp, 'does-not-exist.jsonl'))).toBeUndefined();
   });
 });

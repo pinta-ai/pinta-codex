@@ -67,8 +67,14 @@ const PLUGIN_VERSION = "1.6.0"; // keep in sync with .codex-plugin/plugin.json
  *
  * `CODEX_CLI_VERSION` is kept last rather than dropped: reading it costs
  * nothing and it is the name codex would most plausibly adopt later.
+ *
+ * When nothing answers, the attribute is omitted rather than set to
+ * `"unknown"`. A placeholder is indistinguishable from a real value downstream;
+ * the attribute's absence is the honest signal (PTA-347, and the same choice
+ * pinta-copilot makes).
  */
-let cachedCliVersion: string | null = null;
+// `null` = resolved and nothing answered; `undefined` = not resolved yet.
+let cachedCliVersion: string | null | undefined;
 
 function nonEmpty(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
@@ -125,14 +131,15 @@ function versionFromPackageRoot(): string | undefined {
   }
 }
 
-function getCodexVersion(event?: BaseEvent): string {
-  if (cachedCliVersion !== null) return cachedCliVersion;
-  cachedCliVersion =
-    versionFromTranscript(nonEmpty(event?.transcript_path)) ??
-    versionFromPackageRoot() ??
-    nonEmpty(process.env.CODEX_CLI_VERSION) ??
-    "unknown";
-  return cachedCliVersion;
+function getCodexVersion(event?: BaseEvent): string | undefined {
+  if (cachedCliVersion === undefined) {
+    cachedCliVersion =
+      versionFromTranscript(nonEmpty(event?.transcript_path)) ??
+      versionFromPackageRoot() ??
+      nonEmpty(process.env.CODEX_CLI_VERSION) ??
+      null;
+  }
+  return cachedCliVersion ?? undefined;
 }
 
 /**
@@ -181,9 +188,13 @@ function flattenEvent(event: BaseEvent): OtlpAttribute[] {
 }
 
 function resourceAttrs(event?: BaseEvent): OtlpAttribute[] {
+  const version = getCodexVersion(event);
   return [
     { key: "service.name", value: { stringValue: "codex" } },
-    { key: "service.version", value: { stringValue: getCodexVersion(event) } },
+    // Omitted when unresolved — the absence is the honest signal, not "unknown".
+    ...(version
+      ? [{ key: "service.version", value: { stringValue: version } } as OtlpAttribute]
+      : []),
     { key: "telemetry.sdk.name", value: { stringValue: "pinta-codex" } },
     { key: "telemetry.sdk.language", value: { stringValue: "nodejs" } },
     { key: "telemetry.sdk.version", value: { stringValue: PLUGIN_VERSION } },
