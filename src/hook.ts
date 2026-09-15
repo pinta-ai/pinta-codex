@@ -12,6 +12,7 @@
 import { loadConfig } from "./core/config.js";
 import {
   isPreToolUseEvent,
+  isPermissionRequestEvent,
   isPostToolUseEvent,
   isUserPromptSubmitEvent,
   isSessionEvent,
@@ -20,10 +21,12 @@ import {
 } from "./core/types.js";
 import type { BaseEvent } from "./core/types.js";
 import { handlePreToolUse } from "./handlers/pre-tool-use.js";
+import { handlePermissionRequest } from "./handlers/permission-request.js";
 import { handlePostToolUse } from "./handlers/post-tool-use.js";
 import { handleUserPrompt } from "./handlers/user-prompt.js";
 import { handleSession } from "./handlers/session.js";
 import { handleStop } from "./handlers/stop.js";
+import { handleObserve } from "./handlers/observe.js";
 import { handleDefault } from "./handlers/default.js";
 
 async function readStdin(): Promise<string> {
@@ -46,6 +49,8 @@ export async function runHook(): Promise<number> {
       exitCode = await handleDefault(event);
     } else if (isPreToolUseEvent(event)) {
       exitCode = await handlePreToolUse(event, config);
+    } else if (isPermissionRequestEvent(event)) {
+      exitCode = await handlePermissionRequest(event, config);
     } else if (isPostToolUseEvent(event)) {
       exitCode = await handlePostToolUse(event, config);
     } else if (isUserPromptSubmitEvent(event)) {
@@ -55,7 +60,11 @@ export async function runHook(): Promise<number> {
     } else if (isStopEvent(event)) {
       exitCode = await handleStop(event, config);
     } else {
-      exitCode = await handleDefault(event);
+      // Known, but carries no refusal: PreCompact, PostCompact, SessionEnd,
+      // SubagentStart, SubagentStop, Interrupt. `isSkippedHook` already turned
+      // away anything this build does not know about, so reaching here means
+      // the event is in `OBSERVE_HOOKS` and only needs forwarding.
+      exitCode = await handleObserve(event, config);
     }
   } catch (err) {
     process.stderr.write(`[pinta-codex] error: ${err}\n`);
