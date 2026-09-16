@@ -5,9 +5,13 @@
 //
 // Updates, in lock-step, every place this package hard-codes its own version:
 //   - package.json + package-lock.json   (via `npm version`)
-//   - src/core/guard.ts  GUARD_UA         (the User-Agent the guard call sends)
-//   - src/core/otlp.ts   PLUGIN_VERSION   (telemetry scope/sdk version)
+//   - src/core/version.ts ADAPTER_VERSION (the one version literal in src/)
 //   - .codex-plugin/plugin.json           (plugin manifest version)
+//
+// GUARD_UA and PLUGIN_VERSION used to be separate targets here. They are now
+// derived from ADAPTER_VERSION. The manifest stays a target because it is data
+// and cannot import anything; `tests/core/adapter-version.test.ts` pins it to
+// package.json so a release that bypasses this script fails the build.
 //
 // Fails loudly if any target is missing so a drifting file can't slip a release.
 import { execSync } from 'node:child_process';
@@ -23,10 +27,8 @@ if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
 execSync(`npm version ${version} --no-git-tag-version --allow-same-version`, { stdio: 'inherit' });
 
 const targets = [
-  // GUARD_UA = 'pinta-codex/<version>' (quote style + adaptor name preserved)
-  { file: 'src/core/guard.ts', re: /(const GUARD_UA = (['"]))(pinta-[a-z-]+)\/[^'"]+(\2)/, to: `$1$3/${version}$4` },
-  // const [export] (PLUGIN_VERSION|SDK_VERSION) = "<version>"
-  { file: 'src/core/otlp.ts', re: /((?:export )?const (?:PLUGIN_VERSION|SDK_VERSION) = ")[^"]+(")/, to: `$1${version}$2` },
+  // export const ADAPTER_VERSION = "<version>"
+  { file: 'src/core/version.ts', re: /(export const ADAPTER_VERSION = ")[^"]+(")/, to: `$1${version}$2` },
   // plugin manifest "version": "<version>"
   { file: '.codex-plugin/plugin.json', re: /("version":\s*")[^"]+(")/, to: `$1${version}$2` },
 ];

@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import type { BaseEvent } from "./types.js";
 import type { GuardResult } from "./guard.js";
+import { ADAPTER_VERSION } from "./version.js";
 import {
   attrsFromRecord,
   buildPayload,
@@ -39,7 +40,7 @@ function processOwner(): string {
 export { mergeBatch };
 export type { OtlpPayload, OtlpAttribute };
 
-const PLUGIN_VERSION = "1.8.0"; // keep in sync with .codex-plugin/plugin.json
+const PLUGIN_VERSION = ADAPTER_VERSION;
 
 /**
  * Resolve the Codex CLI version.
