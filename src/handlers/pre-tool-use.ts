@@ -1,6 +1,7 @@
+import { attachGuard } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { HookBlockOutput, PreToolUseEvent } from "../core/types.js";
-import { emitEvent } from "./emit.js";
+import { buildEventPayload, sendPayload } from "./emit.js";
 import { denyReason, evaluateToolGate } from "./tool-gate.js";
 
 /**
@@ -14,10 +15,13 @@ export async function handlePreToolUse(
   event: PreToolUseEvent,
   config: PintaCodexConfig,
 ): Promise<number> {
-  const guard = await evaluateToolGate(event, config);
+  // The span is built BEFORE the guard is asked, and the guard is asked about
+  // that span — one reading of the event, judged and stored alike.
+  const payload = buildEventPayload(event, config, { trace: "current" });
+  const guard = await evaluateToolGate(payload, config);
 
   // Emit the security decision to stdout BEFORE telemetry. Telemetry is
-  // best-effort: a throw from emitEvent must never discard an already-computed
+  // best-effort: a throw from sendPayload must never discard an already-computed
   // DENY (the outer runHook catch is fail-open, so a late throw would silently
   // ALLOW a denied tool).
   if (guard?.decision === "DENY") {
@@ -32,7 +36,10 @@ export async function handlePreToolUse(
   }
 
   try {
-    await emitEvent(event, config, { trace: "current", guard });
+    // codex's GuardResult intentionally omits the `userMessage` field that core
+    // models. attachGuard never reads it, so widening here is behavior-safe.
+    attachGuard(payload, guard as Parameters<typeof attachGuard>[1]);
+    await sendPayload(payload, config);
   } catch (err) {
     process.stderr.write(`[pinta-codex] telemetry emit failed: ${err}\n`);
   }

@@ -1,6 +1,7 @@
+import { attachGuard } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { PermissionRequestBlockOutput, PermissionRequestEvent } from "../core/types.js";
-import { emitEvent } from "./emit.js";
+import { buildEventPayload, sendPayload } from "./emit.js";
 import { denyReason, evaluateToolGate } from "./tool-gate.js";
 
 /**
@@ -10,13 +11,14 @@ import { denyReason, evaluateToolGate } from "./tool-gate.js";
  * a different shape — see `PermissionRequestBlockOutput`. The ordering
  * rationale is identical and equally load-bearing: the decision is written to
  * stdout BEFORE telemetry, because `runHook`'s outer catch is fail-open, so a
- * throw from `emitEvent` after a computed DENY would silently allow the call.
+ * throw from `sendPayload` after a computed DENY would silently allow the call.
  */
 export async function handlePermissionRequest(
   event: PermissionRequestEvent,
   config: PintaCodexConfig,
 ): Promise<number> {
-  const guard = await evaluateToolGate(event, config);
+  const payload = buildEventPayload(event, config, { trace: "current" });
+  const guard = await evaluateToolGate(payload, config);
 
   if (guard?.decision === "DENY") {
     const out: PermissionRequestBlockOutput = {
@@ -32,7 +34,8 @@ export async function handlePermissionRequest(
   }
 
   try {
-    await emitEvent(event, config, { trace: "current", guard });
+    attachGuard(payload, guard as Parameters<typeof attachGuard>[1]);
+    await sendPayload(payload, config);
   } catch (err) {
     process.stderr.write(`[pinta-codex] telemetry emit failed: ${err}\n`);
   }

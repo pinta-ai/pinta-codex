@@ -1,3 +1,4 @@
+import type { OtlpPayload } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { GuardResult } from "../core/guard.js";
 import { evaluateGuard } from "../core/guard.js";
@@ -8,49 +9,26 @@ import { evaluateGuard } from "../core/guard.js";
  * Codex asks about the same tool call on two events: `PreToolUse` from the
  * dispatch path, and `PermissionRequest` from the approval path. They carry the
  * same `tool_name` + `tool_input` shape and differ only in what they may reply.
- * If each handler built its own guard request, the two could drift, and the
+ * If each handler assembled its own guard request, the two could drift, and the
  * failure mode is not a crash — it is one action getting two verdicts depending
  * on which gate happened to ask. guard-runtime has already paid for that shape
  * once (PTA-318, where a Copilot CLI write classified as `other` on
  * `PermissionRequest` and as `file-io` on `PreToolUse`, so the file body was
  * scanned as a command line on one path and not the other).
  *
- * So the request is built exactly once, here, and the gates own only their
- * output envelope.
- *
- * `method` deliberately forwards the host's own event name rather than
- * normalising it to `PreToolUse`. guard-runtime keys tool classification on the
- * event — `PermissionRequest` is in its `HOOK_EVENTS` set precisely because it
- * is a tool-bearing gate — and rewriting the name would hide which gate spoke.
+ * Since core 0.8.0 there is nothing left to assemble: the guard is asked about
+ * the span the gate is about to relay (`buildEventPayload`), the one reading of
+ * the event that exists. The host's own event name rides on it as `codex.hook`
+ * — guard-runtime keys tool classification on the event, and `PermissionRequest`
+ * is in its `HOOK_EVENTS` set precisely because it is a tool-bearing gate.
  */
-export interface ToolGateEvent {
-  session_id: string;
-  cwd: string;
-  hook_event_name: string;
-  tool_name: string;
-  tool_input: Record<string, unknown> | string;
-}
-
 export async function evaluateToolGate(
-  event: ToolGateEvent,
+  payload: OtlpPayload,
   config: PintaCodexConfig,
 ): Promise<GuardResult | null> {
   // codex CLI doesn't inject pinta-codex.env into hook env; config.guardEndpoint
   // already merges process.env + envFile fallback (1.2.4).
-  const rawToolInput =
-    typeof event.tool_input === "string" ? event.tool_input : JSON.stringify(event.tool_input);
-
-  return evaluateGuard(
-    {
-      spanId: event.session_id ?? "unknown",
-      toolName: event.tool_name,
-      method: event.hook_event_name,
-      cwd: event.cwd,
-      toolInput: event.tool_input,
-      rawTextFields: { toolInput: rawToolInput },
-    },
-    config.guardEndpoint,
-  );
+  return evaluateGuard(payload, config.guardEndpoint);
 }
 
 /**

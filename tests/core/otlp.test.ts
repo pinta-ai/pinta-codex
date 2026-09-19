@@ -1,3 +1,4 @@
+import { attachGuard } from '@pinta-ai/core';
 import { describe, it, expect } from 'vitest';
 import { buildOtlpPayload } from '../../src/core/otlp';
 
@@ -62,7 +63,7 @@ describe('buildOtlpPayload (v1.2.0 — generic)', () => {
     expect((sn?.value as any)?.stringValue).toBe('codex');
   });
 
-  it('emits pinta.guard.* attributes when guard result is provided', () => {
+  it('carries no pinta.guard.* itself; the verdict is attached to the same span afterwards', () => {
     const payload = buildOtlpPayload({
       event: {
         hook_event_name: 'PreToolUse',
@@ -74,9 +75,10 @@ describe('buildOtlpPayload (v1.2.0 — generic)', () => {
         tool_use_id: 'u1',
       } as any,
       traceId: '01HQXM7Y9YZJ8MK7Z6P3X1V8R0',
-      guard: { decision: 'DENY', reason: 'deny_credentials', durationMs: 8 },
     });
     const span = payload.resourceSpans[0].scopeSpans[0].spans[0];
+    expect(span.attributes.some((a: any) => a.key.startsWith('pinta.guard.'))).toBe(false);
+    attachGuard(payload, { decision: 'DENY', reason: 'deny_credentials', userMessage: null, durationMs: 8 });
     const decision = span.attributes.find((a: any) => a.key === 'pinta.guard.decision');
     const rule = span.attributes.find((a: any) => a.key === 'pinta.guard.matched_rule');
     const dur = span.attributes.find((a: any) => a.key === 'pinta.guard.duration_ms');

@@ -2,7 +2,6 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import type { BaseEvent } from "./types.js";
-import type { GuardResult } from "./guard.js";
 import { ADAPTER_VERSION } from "./version.js";
 import {
   attrsFromRecord,
@@ -10,7 +9,6 @@ import {
   mergeBatch,
   snakeCase,
   type AttrPolicy,
-  type GuardResult as CoreGuardResult,
   type OtlpAttribute,
   type OtlpPayload,
 } from "@pinta-ai/core";
@@ -206,11 +204,15 @@ function resourceAttrs(event?: BaseEvent): OtlpAttribute[] {
   ];
 }
 
+/**
+ * The span for one hook event. Carries no `pinta.guard.*` attributes: a gate
+ * asks the guard about this payload and attaches its verdict afterwards with
+ * core's `attachGuard`, so the judged span and the sent span are one object.
+ */
 export function buildOtlpPayload(args: {
   event: BaseEvent;
   traceId: string; // ULID (26 chars)
   now?: number; // ms since epoch; injectable for tests
-  guard?: GuardResult | null;
 }): OtlpPayload {
   return buildPayload({
     traceId: args.traceId,
@@ -219,8 +221,5 @@ export function buildOtlpPayload(args: {
     resource: resourceAttrs(args.event),
     scope: { name: "pinta-codex", version: PLUGIN_VERSION },
     now: args.now,
-    // codex's GuardResult intentionally omits the `userMessage` field that core
-    // models. guardAttrs never reads it, so widening here is behavior-safe.
-    guard: args.guard as CoreGuardResult | null | undefined,
   });
 }

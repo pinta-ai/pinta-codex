@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../../src/handlers/emit.js', () => ({ emitEvent: vi.fn() }));
+// The gates build the span, ask the guard about it, then `sendPayload` it; the
+// observe-only handlers go through `emitEvent`. Both sends are mocked, the
+// build is real, so a gate that forgot to build would fail here.
+vi.mock('../../src/handlers/emit.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/handlers/emit.js')>()),
+  emitEvent: vi.fn(),
+  sendPayload: vi.fn(),
+}));
 
-import { emitEvent } from '../../src/handlers/emit.js';
+import { emitEvent, sendPayload } from '../../src/handlers/emit.js';
 import { handlePreToolUse } from '../../src/handlers/pre-tool-use.js';
 import { handlePermissionRequest } from '../../src/handlers/permission-request.js';
 import { handleObserve } from '../../src/handlers/observe.js';
@@ -66,6 +73,8 @@ beforeEach(() => {
   });
   vi.mocked(emitEvent).mockReset();
   vi.mocked(emitEvent).mockResolvedValue(undefined as never);
+  vi.mocked(sendPayload).mockReset();
+  vi.mocked(sendPayload).mockResolvedValue(undefined as never);
 });
 
 afterEach(() => {
@@ -183,16 +192,16 @@ describe('the block survives a telemetry failure', () => {
   // runHook's outer catch is fail-open by design, so a throw raised after a
   // DENY was computed but before it reached stdout would silently allow the
   // call. The decision is written first for exactly this reason.
-  it('PreToolUse still blocks when emitEvent throws', async () => {
+  it('PreToolUse still blocks when sendPayload throws', async () => {
     guardReplies({ decision: 'DENY', reason: 'deny_x', durationMs: 1 });
-    vi.mocked(emitEvent).mockRejectedValue(new Error('otlp collector unreachable'));
+    vi.mocked(sendPayload).mockRejectedValue(new Error('otlp collector unreachable'));
     await expect(handlePreToolUse(PRE_TOOL_USE, CONFIG)).resolves.toBe(0);
     expect(sole().hookSpecificOutput.permissionDecision).toBe('deny');
   });
 
-  it('PermissionRequest still blocks when emitEvent throws', async () => {
+  it('PermissionRequest still blocks when sendPayload throws', async () => {
     guardReplies({ decision: 'DENY', reason: 'deny_x', durationMs: 1 });
-    vi.mocked(emitEvent).mockRejectedValue(new Error('otlp collector unreachable'));
+    vi.mocked(sendPayload).mockRejectedValue(new Error('otlp collector unreachable'));
     await expect(handlePermissionRequest(PERMISSION_REQUEST, CONFIG)).resolves.toBe(0);
     expect(sole().hookSpecificOutput.decision.behavior).toBe('deny');
   });
@@ -214,10 +223,14 @@ describe('fail-open when the guard cannot answer', () => {
     expect(stdout).toEqual([]);
   });
 
-  it('still reports the attempt as telemetry', async () => {
+  it('still reports the attempt as telemetry, on the span the guard was asked about', async () => {
     globalThis.fetch = vi.fn(async () => { throw new Error('ECONNREFUSED'); }) as never;
     await handlePreToolUse(PRE_TOOL_USE, CONFIG);
-    expect(vi.mocked(emitEvent)).toHaveBeenCalledOnce();
+    expect(vi.mocked(sendPayload)).toHaveBeenCalledOnce();
+    const sent = vi.mocked(sendPayload).mock.calls[0]?.[0];
+    const attrs = Object.fromEntries(sent!.resourceSpans[0].scopeSpans[0].spans[0].attributes.map((a) => [a.key, a.value]));
+    expect(attrs['pinta.guard.decision']).toEqual({ stringValue: 'allow' });
+    expect(attrs['pinta.guard.fail_open_reason']).toEqual({ stringValue: 'error' });
   });
 });
 
