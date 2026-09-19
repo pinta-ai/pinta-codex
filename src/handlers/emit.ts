@@ -1,29 +1,46 @@
+import type { OtlpPayload } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { BaseEvent } from "../core/types.js";
-import type { GuardResult } from "../core/guard.js";
 import { Transport } from "../core/transport.js";
 import { TraceManager } from "../core/trace.js";
 import { buildOtlpPayload } from "../core/otlp.js";
 
 /**
- * Shared telemetry flow for the event handlers: flush any queued spans, resolve
- * the trace id, build the OTLP payload, and send it.
+ * The span for a hook event, before anything has been decided about it.
+ *
+ * Split out of `emitEvent` so a gate can build the payload, ask the guard about
+ * that very object, attach the verdict, and then send it — the manager judges
+ * the span the backend will store, not a second reading of the event.
  *
  * `trace` selects how the trace id is resolved:
  *   - "current": reuse the active trace (PreToolUse, PostToolUse, Session, Stop)
  *   - "new":     rotate a fresh trace (UserPromptSubmit — one trace per turn)
- *
- * `guard` (optional) is folded into the span's pinta.guard.* attributes.
+ */
+export function buildEventPayload(
+  event: BaseEvent,
+  config: PintaCodexConfig,
+  opts: { trace: "current" | "new" },
+): OtlpPayload {
+  const trace = new TraceManager(config);
+  const traceId = opts.trace === "new" ? trace.newTrace() : trace.currentTrace();
+  return buildOtlpPayload({ event, traceId });
+}
+
+/** Flush any queued spans, then send this one. */
+export async function sendPayload(payload: OtlpPayload, config: PintaCodexConfig): Promise<void> {
+  const transport = new Transport(config);
+  await transport.flush();
+  await transport.send(payload);
+}
+
+/**
+ * Shared telemetry flow for the non-gating event handlers: resolve the trace
+ * id, build the OTLP payload, flush any queued spans, and send it.
  */
 export async function emitEvent(
   event: BaseEvent,
   config: PintaCodexConfig,
-  opts: { trace: "current" | "new"; guard?: GuardResult | null },
+  opts: { trace: "current" | "new" },
 ): Promise<void> {
-  const transport = new Transport(config);
-  await transport.flush();
-  const trace = new TraceManager(config);
-  const traceId = opts.trace === "new" ? trace.newTrace() : trace.currentTrace();
-  const payload = buildOtlpPayload({ event, traceId, guard: opts.guard });
-  await transport.send(payload);
+  await sendPayload(buildEventPayload(event, config, opts), config);
 }
