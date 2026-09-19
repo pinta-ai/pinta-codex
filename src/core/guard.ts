@@ -3,22 +3,25 @@
 // read from process.env, a `pinta-codex/<version>` User-Agent, and a result
 // shape that does NOT carry the manager's `userMessage` field (codex has never
 // surfaced it). We map core's richer result down to codex's historical shape.
+//
+// Since core 0.8.0 the guard is asked about the OTLP payload the gate is about
+// to relay — the same object, built first — rather than a hand-assembled
+// summary of the event. See `handlers/tool-gate.ts`.
 import { evaluateGuard as coreEvaluateGuard } from "@pinta-ai/core";
-import type { GuardInput } from "@pinta-ai/core";
+import type { GuardPayload } from "@pinta-ai/core";
 import { ADAPTER_VERSION } from "./version.js";
 
 // `GuardResult` below is down-projected on purpose — codex has never surfaced
-// `userMessage`. `GuardInput` had no such reason: it was a verbatim copy of
-// core's, and a copy of a wire type is how one end quietly stops sending a
-// field the other end still reads. Re-exported so the two cannot disagree.
-export type { GuardInput };
+// `userMessage`. The payload type is core's verbatim: a copy of a wire type is
+// how one end quietly stops sending a field the other end still reads.
+export type { GuardPayload };
 
 export interface GuardResult {
   decision: 'ALLOW' | 'DENY' | 'REVIEW';
   reason: string | null;
   durationMs: number;
   // Wall-clock RTT (ms) core measured for the guard call. Carried through the
-  // down-projection below so core's buildPayload can emit pinta.client.rtt_ms;
+  // down-projection below so core's attachGuard can emit pinta.client.rtt_ms;
   // dropping it would silently disable that attribute.
   clientRttMs?: number;
   failOpenReason?: 'timeout' | 'refused' | 'error';
@@ -34,10 +37,10 @@ const TIMEOUT_MS = 50;
 const GUARD_UA = `pinta-codex/${ADAPTER_VERSION}`;
 
 export async function evaluateGuard(
-  input: GuardInput,
+  payload: GuardPayload,
   endpoint: string | undefined,
 ): Promise<GuardResult | null> {
-  const result = await coreEvaluateGuard(input, endpoint, {
+  const result = await coreEvaluateGuard(payload, endpoint, {
     timeoutMs: TIMEOUT_MS,
     token: process.env.PINTA_RELAY_TOKEN ?? '',
     disabled: process.env.PINTA_GUARD_DISABLED === '1',
