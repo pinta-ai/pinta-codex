@@ -19,7 +19,7 @@ export interface BaseEvent {
   cwd: string;
   hook_event_name: string;
   turn_id?: string;
-  model?: string;
+  model?: string | { id?: string; name?: string; [key: string]: unknown };
   // Other hook-specific fields are accessed via flattening; we don't enumerate them.
   [key: string]: unknown;
 }

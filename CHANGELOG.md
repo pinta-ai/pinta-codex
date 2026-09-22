@@ -2,6 +2,24 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.10.0] - 2026-09-22
+
+### Added
+
+- Truthful scalar `codex.model` IDs from explicit hook metadata, with source
+  preservation and omission of placeholders or stringified objects/arrays.
+- Bounded, read-only fallback to a rollout's exact session and turn context.
+  `transcript.turn_context` is explicitly requested-model evidence, not proof
+  of routed response identity. Missing turn IDs, conflicting contexts and
+  parent context on subagent lifecycle events remain model-less.
+- Model regressions and built CJS/ESM model/SDK-version wire checks in PR CI.
+
+### Compatibility
+
+- Still requires Pinta Manager 0.1.11 or later. Guard payloads, output envelopes,
+  event counts and redaction are unchanged; bundled `@pinta-ai/core` remains
+  `^0.8.0`. No new required envelope fields.
+
 ## [1.9.0] - 2026-09-20
 
 ### Changed

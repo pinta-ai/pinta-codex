@@ -21,5 +21,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npm test -- tests/core/model.test.ts tests/core/model-evidence.test.ts
       - run: npm run test:otlp
       - run: npm run test:redact
+      - run: npm run smoke:model
