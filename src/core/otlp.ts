@@ -3,6 +3,8 @@ import os from "os";
 import path from "path";
 import type { BaseEvent } from "./types.js";
 import { ADAPTER_VERSION } from "./version.js";
+import { resolveModel } from "./model.js";
+import { applyModelEvidence } from "./model-evidence.js";
 import {
   attrsFromRecord,
   buildPayload,
@@ -170,7 +172,7 @@ const ATTR_POLICY: AttrPolicy = {
   bashContextKeys: BASH_CONTEXT_KEYS,
 };
 
-function flattenEvent(event: BaseEvent): OtlpAttribute[] {
+function flattenEvent(event: BaseEvent, now: number): OtlpAttribute[] {
   const out: OtlpAttribute[] = [];
   // Discriminator first so the Pinta backend's detectIngestType hits it cheaply.
   out.push({ key: "ingest.type", value: { stringValue: "codex" } });
@@ -182,6 +184,7 @@ function flattenEvent(event: BaseEvent): OtlpAttribute[] {
     if (k === "hook_event_name") continue; // covered by codex.hook above
     rest[k] = v;
   }
+  applyModelEvidence(rest, resolveModel(event, now));
   out.push(...attrsFromRecord(rest, "codex", ATTR_POLICY));
   return out;
 }
@@ -214,12 +217,13 @@ export function buildOtlpPayload(args: {
   traceId: string; // ULID (26 chars)
   now?: number; // ms since epoch; injectable for tests
 }): OtlpPayload {
+  const now = args.now ?? Date.now();
   return buildPayload({
     traceId: args.traceId,
     spanName: `codex.${snakeCase(args.event.hook_event_name)}`,
-    attributes: flattenEvent(args.event),
+    attributes: flattenEvent(args.event, now),
     resource: resourceAttrs(args.event),
     scope: { name: "pinta-codex", version: PLUGIN_VERSION },
-    now: args.now,
+    now,
   });
 }

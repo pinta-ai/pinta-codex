@@ -45,6 +45,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:import": "node scripts/smoke-import.mjs",
+    "smoke:model": "node scripts/smoke-model.mjs",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
