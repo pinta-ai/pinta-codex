@@ -1,6 +1,6 @@
 // codex-specific binding over the shared guard in @pinta-ai/core. Preserves the
-// historical codex behavior: a SHORT 50ms timeout, relay token + disable flag
-// read from process.env, a `pinta-codex/<version>` User-Agent, and a result
+// historical codex behavior: a short timeout (see TIMEOUT_MS), relay token +
+// disable flag read from process.env, a `pinta-codex/<version>` User-Agent, and a result
 // shape that does NOT carry the manager's `userMessage` field (codex has never
 // surfaced it). We map core's richer result down to codex's historical shape.
 //
@@ -27,7 +27,13 @@ export interface GuardResult {
   failOpenReason?: 'timeout' | 'refused' | 'error';
 }
 
-const TIMEOUT_MS = 50;
+// How long the gate waits for a verdict before it fail-opens (ALLOW). Short on
+// purpose — every tool call blocks on it — but 50ms sat below the prod p99 of
+// answers that did come back (58ms), so real verdicts were being discarded
+// (PTA-579). core >=0.9.0 also declares this number to the manager as
+// `x-pinta-guard-budget-ms`, which bounds its own work (the package check) by
+// it; this is the only place to change it.
+const TIMEOUT_MS = 100;
 
 // Self-identify to the manager's guard route so it can attribute calls to this
 // adaptor (the route parses `pinta-*/<version>` out of the User-Agent). Derived

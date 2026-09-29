@@ -2,6 +2,25 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.11.0] - 2026-09-30
+
+### Changed
+
+- The guard gate now waits 100ms for a verdict, up from 50ms (PTA-579). At 50ms
+  the prod p99 of answers that did come back (58ms) already sat past the cut,
+  so slow-but-real verdicts were thrown away as `timeout` fail-opens.
+- The gate declares that budget to the manager. `@pinta-ai/core` `^0.8.0` →
+  `^0.9.0`, which sends the timeout as `x-pinta-guard-budget-ms`. Manager
+  0.1.10+ reads it instead of the adaptor table it keeps, which still says 50
+  for pinta-codex. Without the header the manager gives up on the backend
+  package check at 40ms. With it the manager has 80ms.
+
+### Compatibility
+
+- Still requires Pinta Manager 0.1.11 or later. Guard payloads, output
+  envelopes, event counts and redaction are unchanged. A manager older than
+  0.1.10 ignores the header and keeps its own table.
+
 ## [1.10.0] - 2026-09-22
 
 ### Added

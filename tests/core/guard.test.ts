@@ -90,6 +90,71 @@ describe('evaluateGuard', () => {
     expect(attrs).toMatchObject({ 'ingest.type': 'codex', 'codex.hook': 'PreToolUse', 'codex.cwd': '/etc' });
   });
 
+  /**
+   * The gate waits 100ms (PTA-579). At 50ms the prod p99 of answers that did
+   * come back (58ms) already sat past the cut, so a slow-but-real verdict was
+   * thrown away as a fail-open. Driven on fake timers so both edges are exact:
+   * an answer at 99ms is used, one at 101ms is not.
+   */
+  describe('timeout budget', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    /** A manager that answers DENY after `ms`, or rejects if the caller aborts first. */
+    const answerAfter = (ms: number) =>
+      vi.fn(
+        (_url: unknown, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const t = setTimeout(() => resolve(new Response(
+              JSON.stringify({ decision: 'DENY', reason: 'r', durationMs: ms }),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            )), ms);
+            init?.signal?.addEventListener('abort', () => {
+              clearTimeout(t);
+              const err = new Error('aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }),
+      );
+
+    it('uses an answer that arrives inside 100ms', async () => {
+      globalThis.fetch = answerAfter(99) as never;
+      const pending = evaluateGuard(payload(), 'http://127.0.0.1:5147/guard/evaluate');
+      await vi.advanceTimersByTimeAsync(100);
+      const r = await pending;
+      expect(r?.decision).toBe('DENY');
+      expect(r?.failOpenReason).toBeUndefined();
+    });
+
+    it('fails open on an answer that arrives after 100ms', async () => {
+      globalThis.fetch = answerAfter(101) as never;
+      const pending = evaluateGuard(payload(), 'http://127.0.0.1:5147/guard/evaluate');
+      await vi.advanceTimersByTimeAsync(101);
+      const r = await pending;
+      expect(r?.decision).toBe('ALLOW');
+      expect(r?.failOpenReason).toBe('timeout');
+    });
+
+    /**
+     * The manager bounds its own work by the caller's timeout and spends 80%
+     * of it. Without this header it reads codex's number off a table copied
+     * into pinta-manager (still 50) and gives up on the package check at 40ms
+     * even though this gate now waits 100. core >=0.9.0 sends it (PTA-579).
+     */
+    it('declares the 100ms budget to the manager', async () => {
+      const fetchMock = vi.fn(async () => new Response(
+        JSON.stringify({ decision: 'ALLOW', reason: null, durationMs: 1 }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ));
+      globalThis.fetch = fetchMock as never;
+      await evaluateGuard(payload(), 'http://127.0.0.1:5147/guard/evaluate');
+      const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+      expect(headers['x-pinta-guard-budget-ms']).toBe('100');
+      expect(headers['user-agent']).toMatch(/^pinta-codex\//);
+    });
+  });
+
   it('records a 410 from the manager as failOpenReason=refused', async () => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ error: 'legacy_guard_input' }), { status: 410 })) as never;
     const r = await evaluateGuard(payload(), 'http://127.0.0.1:5147/guard/evaluate');
