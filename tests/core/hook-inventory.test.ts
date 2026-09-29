@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   BLOCKING_HOOKS,
+  OUTPUT_BLOCKING_HOOKS,
   OBSERVE_HOOKS,
   isSkippedHook,
 } from '../../src/core/types.js';
@@ -40,7 +41,7 @@ const asEvent = (name: string): BaseEvent =>
 
 describe('codex hook event inventory', () => {
   it('recognises every event codex 0.154.0 dispatches', () => {
-    const known = [...BLOCKING_HOOKS, ...OBSERVE_HOOKS];
+    const known = [...BLOCKING_HOOKS, ...OUTPUT_BLOCKING_HOOKS, ...OBSERVE_HOOKS];
     expect([...known].sort()).toEqual([...CODEX_0_154_EVENTS].sort());
   });
 
@@ -64,8 +65,12 @@ describe('codex hook event inventory', () => {
   });
 
   it('keeps blocking and observe disjoint', () => {
-    const overlap = [...BLOCKING_HOOKS].filter((e) => (OBSERVE_HOOKS as readonly string[]).includes(e));
+    const overlap = [...BLOCKING_HOOKS, ...OUTPUT_BLOCKING_HOOKS].filter((e) => (OBSERVE_HOOKS as readonly string[]).includes(e));
     expect(overlap).toEqual([]);
+  });
+
+  it('distinguishes output withholding from refusing execution', () => {
+    expect([...OUTPUT_BLOCKING_HOOKS]).toEqual(['PostToolUse']);
   });
 });
 

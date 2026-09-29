@@ -7,6 +7,7 @@ vi.mock('../../src/handlers/emit.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/handlers/emit.js')>()),
   emitEvent: vi.fn(),
   sendPayload: vi.fn(),
+  deferPayload: vi.fn(),
 }));
 
 import { emitEvent, sendPayload } from '../../src/handlers/emit.js';
