@@ -135,6 +135,24 @@ describe('evaluateGuard', () => {
       expect(r?.decision).toBe('ALLOW');
       expect(r?.failOpenReason).toBe('timeout');
     });
+
+    /**
+     * The manager bounds its own work by the caller's timeout and spends 80%
+     * of it. Without this header it reads codex's number off a table copied
+     * into pinta-manager (still 50) and gives up on the package check at 40ms
+     * even though this gate now waits 100. core >=0.9.0 sends it (PTA-579).
+     */
+    it('declares the 100ms budget to the manager', async () => {
+      const fetchMock = vi.fn(async () => new Response(
+        JSON.stringify({ decision: 'ALLOW', reason: null, durationMs: 1 }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ));
+      globalThis.fetch = fetchMock as never;
+      await evaluateGuard(payload(), 'http://127.0.0.1:5147/guard/evaluate');
+      const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+      expect(headers['x-pinta-guard-budget-ms']).toBe('100');
+      expect(headers['user-agent']).toMatch(/^pinta-codex\//);
+    });
   });
 
   it('records a 410 from the manager as failOpenReason=refused', async () => {
