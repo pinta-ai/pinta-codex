@@ -48,13 +48,15 @@ hooks = true
 
 | Event | Notes |
 |-------|-------|
-| `PreToolUse` | Every local tool, not just Bash — `apply_patch`, MCP calls and all function tools since 0.134.0 |
+| `PreToolUse` | Local calls which dispatch this hook, including Bash, `apply_patch` and MCP; not every host tool path |
 | `PermissionRequest` | Fires when Codex would prompt the user, including for network access |
 
 Both answer through stdout, and their output envelopes are **not the same
 shape** — see `src/core/types.ts`. A deny must carry a non-empty reason; Codex
 rejects one without it. `PreToolUse` accepts only `deny` (an allow is empty
 stdout).
+Hosted tools, `write_stdin` and specialized paths that omit these hooks remain
+outside adapter coverage.
 
 ### Observed — forwarded, never block
 
