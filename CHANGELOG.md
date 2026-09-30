@@ -2,6 +2,27 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.11.1] - 2026-09-30
+
+### Fixed
+
+- Guard successful `PostToolUse` output before telemetry and use fixed safe
+  feedback for denied model-facing content (PTA-587).
+- Complete decided denials without waiting for collector network IO; retain
+  the original redacted evidence in the bounded retry queue.
+- Bundle `@pinta-ai/core` `^0.9.2` so ordinary `find -path` and `find -print`
+  arguments are not mistaken for mysql-family password options (PTA-515).
+
+### Compatibility
+
+- Catalog distribution of this output-enforcing release is gated to Manager
+  0.1.14 or later; older Managers keep the preceding compatible adapter.
+- Output protection requires a dispatched native hook and an output-capable
+  Manager/guard. Codex 0.154.0 skips `PostToolUse` for MCP `isError` results;
+  this release does not fix that host boundary (PTA-596).
+- REVIEW, disabled/fail-open behavior, guard budgets and guard/export ordering
+  are unchanged. Output denial does not undo an executed tool.
+
 ## [1.11.0] - 2026-09-30
 
 ### Changed
