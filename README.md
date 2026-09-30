@@ -77,6 +77,8 @@ returns **`{"decision":"block","reason":"…"}`**, the native
 [Codex 0.154.0 contract](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/hooks/src/events/post_tool_use.rs).
 Codex substitutes that feedback for the original result; it may continue the
 turn. This is not a pre-tool refusal or rollback of completed side effects.
+The feedback is fixed safe text, never a guard-supplied reason copied into
+model-facing output. The original verdict remains attached to audit evidence.
 Hosted tools and paths which do not dispatch local hooks remain outside coverage.
 In a native Codex 0.154.0 loopback-provider test, successful MCP results dispatched
 this hook, but MCP `isError: true` results reached the model **without a
@@ -91,6 +93,9 @@ For **all three gates**, a decided DENY queues its span on disk and finishes
 without an OTLP/retry network wait. A later non-denied/lifecycle hook drains the
 existing retry queue. Delivery remains best-effort: a denied invocation alone
 does not prove collector ingestion.
+Deferred payloads retain the transport's `MAX_POST_BYTES` UTF-8 JSON limit;
+oversized payloads are diagnosed and dropped without a network fallback.
+Guard-only configurations without a telemetry endpoint retain no queue entries.
 
 ## Behavior
 

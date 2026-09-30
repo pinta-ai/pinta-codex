@@ -2,7 +2,9 @@ import { attachGuard } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { PostToolUseBlockOutput, PostToolUseEvent } from "../core/types.js";
 import { buildEventPayload, deferPayload, sendPayload } from "./emit.js";
-import { denyReason, evaluateToolGate } from "./tool-gate.js";
+import { evaluateToolGate } from "./tool-gate.js";
+
+export const OUTPUT_DENIAL_REASON = "Pinta withheld this tool output because it violated an active policy.";
 
 export async function handlePostToolUse(
   event: PostToolUseEvent,
@@ -11,7 +13,7 @@ export async function handlePostToolUse(
   const payload = buildEventPayload(event, config, { trace: "current" });
   const guard = await evaluateToolGate(payload, config);
   if (guard?.decision === "DENY") {
-    const out: PostToolUseBlockOutput = { decision: "block", reason: denyReason(guard) };
+    const out: PostToolUseBlockOutput = { decision: "block", reason: OUTPUT_DENIAL_REASON };
     process.stdout.write(JSON.stringify(out) + "\n");
   }
 

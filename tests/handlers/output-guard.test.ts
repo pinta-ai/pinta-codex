@@ -15,7 +15,7 @@ vi.mock("../../src/core/guard.js", () => ({ evaluateGuard: vi.fn() }));
 
 import { evaluateGuard } from "../../src/core/guard.js";
 import { deferPayload, sendPayload } from "../../src/handlers/emit.js";
-import { handlePostToolUse } from "../../src/handlers/post-tool-use.js";
+import { handlePostToolUse, OUTPUT_DENIAL_REASON } from "../../src/handlers/post-tool-use.js";
 import { handlePreToolUse } from "../../src/handlers/pre-tool-use.js";
 import { handlePermissionRequest } from "../../src/handlers/permission-request.js";
 
@@ -50,7 +50,7 @@ describe("PostToolUse handler (native dispatch verified separately)", () => {
   ])("judges supplied output and emits only the native post-tool contract", async (response) => {
     vi.mocked(evaluateGuard).mockResolvedValue(deny);
     await handlePostToolUse({ ...event, tool_response: response }, config);
-    expect(output.map(line => JSON.parse(line))).toEqual([{ decision: "block", reason: "output-policy" }]);
+    expect(output.map(line => JSON.parse(line))).toEqual([{ decision: "block", reason: OUTPUT_DENIAL_REASON }]);
     expect(sendPayload).not.toHaveBeenCalled();
     const payload = vi.mocked(evaluateGuard).mock.calls[0][0] as OtlpPayload;
     expect(deferPayload).toHaveBeenCalledWith(payload, config);
@@ -75,7 +75,19 @@ describe("PostToolUse handler (native dispatch verified separately)", () => {
     vi.mocked(evaluateGuard).mockResolvedValue({ ...deny, reason: " " });
     vi.mocked(deferPayload).mockImplementation(() => { throw new Error("queue unavailable"); });
     await expect(handlePostToolUse(event, config)).resolves.toBe(0);
-    expect(JSON.parse(output[0])).toEqual({ decision: "block", reason: "guard_deny" });
+    expect(JSON.parse(output[0])).toEqual({ decision: "block", reason: OUTPUT_DENIAL_REASON });
+  });
+
+  it("writes fixed feedback before persistence without reflecting guard-supplied output", async () => {
+    vi.mocked(evaluateGuard).mockResolvedValue({ ...deny, reason: "UNTRUSTED_OUTPUT_MARKER" });
+    vi.mocked(deferPayload).mockImplementation(() => {
+      expect(output).toHaveLength(1);
+      expect(JSON.parse(output[0]).reason).toBe(OUTPUT_DENIAL_REASON);
+    });
+    await handlePostToolUse(event, config);
+    expect(output.join("")).not.toContain("UNTRUSTED_OUTPUT_MARKER");
+    const payload = vi.mocked(evaluateGuard).mock.calls[0][0] as OtlpPayload;
+    expect(attributes(payload)["pinta.guard.matched_rule"]).toEqual({ stringValue: "UNTRUSTED_OUTPUT_MARKER" });
   });
 });
 

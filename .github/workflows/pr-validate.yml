@@ -27,6 +27,7 @@ jobs:
           tests/core/guard.test.ts tests/core/hook-inventory.test.ts
           tests/handlers/pre-tool-use-guard-input.test.ts
           tests/handlers/gate-output.test.ts tests/handlers/output-guard.test.ts
+          tests/handlers/deferred-telemetry.test.ts
       - run: npm run test:otlp
       - run: npm run test:redact
       - run: npm run smoke:model
