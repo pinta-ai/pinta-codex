@@ -31,8 +31,8 @@ npm run doctor     # verify everything green
 
 ## What it captures
 
-Codex 0.154.0 dispatches **twelve** hook events. All twelve are handled: two are
-pre-execution gates that can block, and ten are observed and forwarded.
+Codex 0.154.0 dispatches **twelve** hook events. All twelve are handled: two
+pre-execution gates, one output gate, and nine observations.
 
 Hooks require the `hooks` feature in `~/.codex/config.toml`:
 
@@ -48,17 +48,19 @@ hooks = true
 
 | Event | Notes |
 |-------|-------|
-| `PreToolUse` | Every local tool, not just Bash — `apply_patch`, MCP calls and all function tools since 0.134.0 |
+| `PreToolUse` | Local calls which dispatch this hook, including Bash, `apply_patch` and MCP; not every host tool path |
 | `PermissionRequest` | Fires when Codex would prompt the user, including for network access |
 
 Both answer through stdout, and their output envelopes are **not the same
 shape** — see `src/core/types.ts`. A deny must carry a non-empty reason; Codex
 rejects one without it. `PreToolUse` accepts only `deny` (an allow is empty
 stdout).
+Hosted tools, `write_stdin` and specialized paths that omit these hooks remain
+outside adapter coverage.
 
 ### Observed — forwarded, never block
 
-`PostToolUse`, `PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`,
+`PreCompact`, `PostCompact`, `SessionStart`, `SessionEnd`,
 `UserPromptSubmit`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`.
 
 `SessionStart` also drains the retry queue; `UserPromptSubmit` starts a new ULID
@@ -67,13 +69,41 @@ send-only — Codex reads no reply from it.
 
 Each invocation spawns `node dist/index.js`, maps the event to a single OTLP span, and POSTs it to `{endpoint}/traces`.
 
+### Output gate — does not undo execution
+
+`PostToolUse` submits the original `tool_response`, input and event identity to
+the guard, including non-zero Bash exits when the host dispatches this event. On DENY it
+returns **`{"decision":"block","reason":"…"}`**, the native
+[Codex 0.154.0 contract](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/hooks/src/events/post_tool_use.rs).
+Codex substitutes that feedback for the original result; it may continue the
+turn. This is not a pre-tool refusal or rollback of completed side effects.
+The feedback is fixed safe text, never a guard-supplied reason copied into
+model-facing output. The original verdict remains attached to audit evidence.
+Hosted tools and paths which do not dispatch local hooks remain outside coverage.
+In a native Codex 0.154.0 loopback-provider test, successful MCP results dispatched
+this hook, but MCP `isError: true` results reached the model **without a
+`PostToolUse` event**. Those error results remain outside this adapter's output
+gate (PTA-596); a handler-only fixture cannot prove native error coverage.
+
+Output decisions carry `pinta.guard.target=tool_output` on the original masked
+span. The manager/runtime must interpret the native post phase as output
+evaluation, not re-run execution policies against completed operations.
+
+For **all three gates**, a decided DENY queues its span on disk and finishes
+without an OTLP/retry network wait. A later non-denied/lifecycle hook drains the
+existing retry queue. Delivery remains best-effort: a denied invocation alone
+does not prove collector ingestion.
+Deferred payloads retain the transport's `MAX_POST_BYTES` UTF-8 JSON limit;
+oversized payloads are diagnosed and dropped without a network fallback.
+Guard-only configurations without a telemetry endpoint retain no queue entries.
+
 ## Behavior
 
 - OTLP/HTTP JSON transport. Headers are read from `OTEL_EXPORTER_OTLP_HEADERS` (`key=val,key=val` format)
 - Top-level event fields are flattened into `codex.*` span attributes (Bronze; sibling adaptors use `cc.*`, `mcp.*`)
-- **Telemetry never blocks.** Every hook exits 0, and transmission failures are absorbed by the retry queue. A guard decision travels in stdout, so a dropped span cannot deny and a failed POST cannot stall a turn
+- **Telemetry is best-effort.** Every hook exits 0. A decided DENY travels in stdout and queues its span without awaiting a network request; other hooks retain normal send/retry behavior
 - **Fail-open is deliberate.** If the guard endpoint is unreachable or slow, the gates allow. An outage in Pinta must not stop an engineer from working; the guard is a control, not a dependency
-- Disk-backed retry queue at `.plugin-data/failed-spans.jsonl` (cap 1000). Drained on the next hook invocation
+- Disk-backed retry queue at `.plugin-data/failed-spans.jsonl` (cap 1000). Drained on a later non-denied or lifecycle hook invocation
 - One trace per user turn — based on the `UserPromptSubmit` ULID
 
 ### Model attribution and its limits

@@ -1,4 +1,4 @@
-import type { OtlpPayload } from "@pinta-ai/core";
+import { DiskRetryQueue, MAX_POST_BYTES, type OtlpPayload } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { BaseEvent } from "../core/types.js";
 import { Transport } from "../core/transport.js";
@@ -31,6 +31,16 @@ export async function sendPayload(payload: OtlpPayload, config: PintaCodexConfig
   const transport = new Transport(config);
   await transport.flush();
   await transport.send(payload);
+}
+
+/** A decided denial must finish before the host deadline, not a collector ACK. */
+export function deferPayload(payload: OtlpPayload, config: PintaCodexConfig): void {
+  if (!config.endpoint) return;
+  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_POST_BYTES) {
+    process.stderr.write("[pinta-codex] deferred telemetry exceeds MAX_POST_BYTES; dropped\n");
+    return;
+  }
+  new DiskRetryQueue(config.pluginData, "pinta-codex").enqueue(payload);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { attachGuard } from "@pinta-ai/core";
 import type { PintaCodexConfig } from "../core/config.js";
 import type { HookBlockOutput, PreToolUseEvent } from "../core/types.js";
-import { buildEventPayload, sendPayload } from "./emit.js";
+import { buildEventPayload, deferPayload, sendPayload } from "./emit.js";
 import { denyReason, evaluateToolGate } from "./tool-gate.js";
 
 /**
@@ -39,7 +39,8 @@ export async function handlePreToolUse(
     // codex's GuardResult intentionally omits the `userMessage` field that core
     // models. attachGuard never reads it, so widening here is behavior-safe.
     attachGuard(payload, guard as Parameters<typeof attachGuard>[1]);
-    await sendPayload(payload, config);
+    if (guard?.decision === "DENY") deferPayload(payload, config);
+    else await sendPayload(payload, config);
   } catch (err) {
     process.stderr.write(`[pinta-codex] telemetry emit failed: ${err}\n`);
   }

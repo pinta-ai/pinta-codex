@@ -162,17 +162,19 @@ export function isStopEvent(event: BaseEvent): event is StopEvent {
 //
 // Split by what a handler is ALLOWED to do with the event, not by how much of
 // it we happen to parse. The two gates below are the only events whose reply
-// can stop a tool from running; everything else is telemetry no matter how
-// rich its payload is. Keeping that distinction in the data — rather than
+// can stop a tool from running. PostToolUse can instead withhold its result;
+// completed side effects cannot be undone. Keeping that distinction in the data — rather than
 // implied by which handler a name happens to route to — is what stops a future
 // event from being wired to a blocking handler whose reply codex never reads.
 
 /** Events whose stdout can refuse a tool call. */
 export const BLOCKING_HOOKS = ["PreToolUse", "PermissionRequest"] as const;
 
+/** Events whose stdout can replace a completed tool's result with feedback. */
+export const OUTPUT_BLOCKING_HOOKS = ["PostToolUse"] as const;
+
 /** Events that carry no refusal. Forwarded as telemetry only. */
 export const OBSERVE_HOOKS = [
-  "PostToolUse",
   "PreCompact",
   "PostCompact",
   "SessionStart",
@@ -192,7 +194,7 @@ export const OBSERVE_HOOKS = [
  * An event absent from this set reaches the default handler and exits 0, so a
  * codex release that adds a thirteenth stays fail-open rather than erroring.
  */
-const KNOWN_HOOKS = new Set<string>([...BLOCKING_HOOKS, ...OBSERVE_HOOKS]);
+const KNOWN_HOOKS = new Set<string>([...BLOCKING_HOOKS, ...OUTPUT_BLOCKING_HOOKS, ...OBSERVE_HOOKS]);
 
 export function isSkippedHook(event: BaseEvent): boolean {
   return !KNOWN_HOOKS.has(event.hook_event_name);
@@ -245,4 +247,10 @@ export interface PermissionRequestBlockOutput {
       message: string;
     };
   };
+}
+
+/** Codex 0.154.0 replaces the result with this feedback; it does not undo execution. */
+export interface PostToolUseBlockOutput {
+  decision: "block";
+  reason: string;
 }
