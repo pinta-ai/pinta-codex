@@ -207,20 +207,28 @@ function pipeline(input: string, opts: { context?: "bash" } = {}): string {
   return applyMatches(input, kept);
 }
 
-check("overlap: bearer absorbs github_token inside it", () => {
-  const input = "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz0123456789AB";
-  const out = pipeline(input);
-  assert.ok(out.includes("Bearer [REDACTED:bearer_token]"), out);
-  assert.ok(!out.includes("[REDACTED:github_token]"), out);
+check("overlap: identical bearer/github captures redact the value once", () => {
+  const secret = "ghp_" + "a".repeat(40);
+  const input = `Authorization: Bearer ${secret}`;
+  const matches = collectMatches(input, {});
+  assert.deepStrictEqual(new Set(matches.map((match) => match.type)), new Set(["github_token", "bearer_token"]));
+  const kept = resolveOverlaps(matches);
+  assert.strictEqual(kept.length, 1);
+  assert.strictEqual(kept[0].replaceStart, input.indexOf(secret));
+  assert.strictEqual(kept[0].replaceEnd, input.length);
+  assert.strictEqual(pipeline(input), "Authorization: Bearer [REDACTED:github_token]");
 });
 
-check("overlap: env_var_secret wins over openai_key when capture spans key", () => {
-  const input = "OPENAI_API_KEY=sk-proj-abcdefghij0123456789ABCDEFGHIJ0123456789klmn";
-  const out = pipeline(input);
-  // env_var_secret has a wider whole-match (starts at OPENAI_API_KEY, ends at value end),
-  // so it wins under the start-asc / longest-on-tie rule.
-  assert.ok(out.includes("OPENAI_API_KEY=[REDACTED:env_var_secret]"), out);
-  assert.ok(!out.includes("[REDACTED:openai_key]"), out);
+check("overlap: identical environment/openai captures redact the value once", () => {
+  const secret = "sk-" + "a".repeat(40);
+  const input = `OPENAI_API_KEY=${secret}`;
+  const matches = collectMatches(input, {});
+  assert.deepStrictEqual(new Set(matches.map((match) => match.type)), new Set(["openai_key", "env_var_secret"]));
+  const kept = resolveOverlaps(matches);
+  assert.strictEqual(kept.length, 1);
+  assert.strictEqual(kept[0].replaceStart, input.indexOf(secret));
+  assert.strictEqual(kept[0].replaceEnd, input.length);
+  assert.strictEqual(pipeline(input), "OPENAI_API_KEY=[REDACTED:openai_key]");
 });
 
 check("ordering: independent matches both applied", () => {

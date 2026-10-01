@@ -9,6 +9,11 @@ before they run, and forwards every hook event as a span.
 
 ## Channels
 
+Staging builds live on `staging/skax-a`, use the `skax` npm tag, and pin
+Core `0.9.3-skax.0`. Masked findings identify actual returned content separately
+from completed inputs. Use the isolated stage catalog and coordinated Manager
+build; do not promote these pins to `main` or the production catalog.
+
 Two channels are operated in parallel. They coexist on the same machine because each entry in `~/.codex/hooks.json` is discriminated by its absolute-path prefix.
 
 | Channel | Audience | Install |
