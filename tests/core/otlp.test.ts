@@ -3,6 +3,25 @@ import { describe, it, expect } from 'vitest';
 import { buildOtlpPayload } from '../../src/core/otlp';
 
 describe('buildOtlpPayload (v1.2.0 — generic)', () => {
+  it.each(['ordinary', 'FAKE0NativeOutputCredential123456'])('scopes native returned and failure findings: %s', (output) => {
+    const secret = 'FAKE0NativeOutputCredential123456';
+    for (const key of ['tool_response', 'error']) {
+      const payload = buildOtlpPayload({
+        traceId: '01HQXM7Y9YZJ8MK7Z6P3X1V8R0',
+        event: {
+          hook_event_name: key === 'error' ? 'PostToolUseFailure' : 'PostToolUse',
+          session_id: 'synthetic', transcript_path: '/synthetic/missing', cwd: '/synthetic',
+          tool_name: 'exec_command', tool_input: { cmd: 'echo ordinary', header: `Authorization: Bearer ${secret}` },
+          [key]: output,
+        },
+      });
+      const value = payload.resourceSpans[0].scopeSpans[0].spans[0].attributes.find((a) => a.key === 'pinta.facts')?.value;
+      if (!value || !('stringValue' in value)) throw new Error('Missing producer findings');
+      expect(JSON.parse(value.stringValue).items[0].secrets.origins).toEqual([output === secret ? 'toolOutput' : 'attributes']);
+      expect(JSON.stringify(payload)).not.toContain(secret);
+    }
+  });
+
   it('produces resourceSpans with one span per call', () => {
     const payload = buildOtlpPayload({
       event: {
