@@ -75,10 +75,29 @@ Each invocation spawns `node dist/index.js`, maps the event to a single OTLP spa
 the guard, including non-zero Bash exits when the host dispatches this event. On DENY it
 returns **`{"decision":"block","reason":"…"}`**, the native
 [Codex 0.154.0 contract](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/hooks/src/events/post_tool_use.rs).
-Codex substitutes that feedback for the original result; it may continue the
+Codex substitutes that feedback for the original result and continues the
 turn. This is not a pre-tool refusal or rollback of completed side effects.
-The feedback is fixed safe text, never a guard-supplied reason copied into
-model-facing output. The original verdict remains attached to audit evidence.
+`continue:false` is never emitted (it would end the run), nor is
+`updatedMCPToolOutput` (Codex 0.154.0 does not support it and ignores the hook).
+
+`reason` is the whole substitute the model sees, built by `@pinta-ai/core`'s
+`buildOutputDenial` from the manager's verdict (PTA-695). It is one of two
+shapes, depending on the `outputAction` the manager sent:
+
+| Manager says | What the model receives in `reason` |
+|---|---|
+| `outputAction: "mask"` + `redactions` | **notice** (the policy's `userMessage` + `(evaluation <id>)`), a blank line, the fixed **mask guidance**, a blank line, then the **original output with each detected value replaced by `[REDACTED:<category>]`**. The tool's output stays usable; only the detected values are gone. |
+| `outputAction: "withhold"`, or no `outputAction` at all (Manager < 0.1.16) | **notice**, a blank line, the fixed **withhold guidance**. Nothing of the output is delivered. |
+
+A `mask` whose values do not occur in the output falls back to `withhold` —
+delivering it would deliver exactly what the policy denied. The original text
+is `tool_response` when it is a string, otherwise its JSON (the same reading the
+span carries as `codex.tool_response`), so a masked JSON result stays valid JSON.
+The rule id (`reason` in the guard response) is never copied into model-facing
+output; the manager's `userMessage` is, and for output inspections it quotes
+nothing from the output itself. The detected values travel only in the
+synchronous guard response and are never written to the span or a log. The
+original verdict remains attached to audit evidence.
 Hosted tools and paths which do not dispatch local hooks remain outside coverage.
 In a native Codex 0.154.0 loopback-provider test, successful MCP results dispatched
 this hook, but MCP `isError: true` results reached the model **without a

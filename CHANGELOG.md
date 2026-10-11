@@ -2,6 +2,40 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.12.0] - 2026-10-11
+
+### Changed
+
+- A denied `PostToolUse` output now reaches the model as the policy's own
+  message plus a recovery hint, and — when the Manager sent the detected
+  values (`outputAction: "mask"` + `redactions`) — the original output with
+  only those values replaced by `[REDACTED:<category>]`, instead of one fixed
+  "withheld" sentence (PTA-695). The envelope is unchanged:
+  `{"decision":"block","reason":"…"}`; `reason` carries the whole substitute.
+  When the Manager says `withhold`, or says nothing about delivery, the model
+  gets the message and the hint and none of the output. The evaluation id is
+  named in both so a false positive can be reported by reference.
+- `PreToolUse` and `PermissionRequest` denials now show the Manager's
+  `userMessage` (the policy's wording) and fall back to the rule id only when
+  there is none — the same preference every other adaptor already had. The
+  guard binding used to drop `userMessage` on the way through; it now passes
+  `@pinta-ai/core`'s `GuardResult` through whole.
+- `@pinta-ai/core` `^0.9.2` → `^0.10.0`, which parses `evaluationId`,
+  `outputAction` and `redactions` from the guard response and provides
+  `buildOutputDenial`.
+
+### Compatibility
+
+- Requires Pinta Manager 0.1.16 or later for masking. An older Manager sends
+  no `outputAction`, which this release treats as `withhold`: the model still
+  gets the policy message and the hint, never the output. Nothing stops the
+  run — `continue:false` is not emitted.
+- The detected values are read only to build the substitute and are never
+  written to `pinta.guard.*` span attributes or logs. Guard payloads, event
+  counts, budgets, fail-open behavior and the pre-tool envelopes are unchanged.
+- Codex 0.154.0 still skips `PostToolUse` for MCP `isError` results
+  (PTA-596); this release does not change that host boundary.
+
 ## [1.11.1] - 2026-09-30
 
 ### Fixed

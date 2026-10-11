@@ -45,9 +45,16 @@ export async function evaluateToolGate(
  * A guard DENY with a null reason is not hypothetical — `GuardResult.reason` is
  * `string | null` — so the fallback is what stands between a real block and a
  * silently dropped one.
+ *
+ * Preference order is the one every other adaptor uses on its PreToolUse gate:
+ * the manager's `userMessage` (the policy's own wording, written for a reader),
+ * then `reason` (the rule id, written for a log), then a constant. Until 1.12.0
+ * codex's guard binding dropped `userMessage`, so these two gates alone showed
+ * the rule id (PTA-695).
  */
 export function denyReason(guard: GuardResult | null | undefined): string {
-  const reason = guard?.reason;
-  if (typeof reason === "string" && reason.trim().length > 0) return reason;
+  for (const candidate of [guard?.userMessage, guard?.reason]) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate;
+  }
   return "guard_deny";
 }

@@ -41,8 +41,44 @@ describe('evaluateGuard', () => {
     expect(r).toEqual<GuardResult>({
       decision: 'DENY',
       reason: 'deny_credentials',
+      userMessage: null,
       durationMs: 8,
       clientRttMs: expect.any(Number),
+    });
+    // A manager older than 0.1.16 sends none of the output-denial fields; they
+    // must come out absent, not null, so `buildOutputDenial` reads "withhold".
+    for (const absent of ['evaluationId', 'outputAction', 'redactions']) {
+      expect(r).not.toHaveProperty(absent);
+    }
+  });
+
+  /**
+   * Until 1.12.0 this binding copied core's result into a local shape that
+   * dropped `userMessage`, so the gates showed the rule id instead of the
+   * policy's message and the output gate could not mask (PTA-695). The result
+   * is now core's, whole: the manager's message and the three output-denial
+   * fields come through, and malformed redactions are already filtered by core.
+   */
+  it('carries userMessage and the output-denial fields through unchanged', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(
+      JSON.stringify({
+        decision: 'DENY',
+        reason: 'deny_credentials',
+        userMessage: 'Blocked by Pinta AI: credential in output',
+        durationMs: 8,
+        evaluationId: 'ev-1',
+        outputAction: 'mask',
+        redactions: [{ category: 'CREDENTIAL', match: 'ctx7sk-FAKE0000' }, { category: 'X', match: '' }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )) as never;
+    const r = await evaluateGuard(payload(), 'http://127.0.0.1:5147/guard/evaluate');
+    expect(r).toMatchObject({
+      decision: 'DENY',
+      userMessage: 'Blocked by Pinta AI: credential in output',
+      evaluationId: 'ev-1',
+      outputAction: 'mask',
+      redactions: [{ category: 'CREDENTIAL', match: 'ctx7sk-FAKE0000' }],
     });
   });
 
