@@ -207,20 +207,23 @@ function pipeline(input: string, opts: { context?: "bash" } = {}): string {
   return applyMatches(input, kept);
 }
 
-check("overlap: bearer absorbs github_token inside it", () => {
+check("overlap: the specific github_token wins over the generic bearer envelope", () => {
+  // core >= 0.9.3 keeps the more specific finding when a generic envelope
+  // (bearer_token) and a vendor token overlap (pinta-core #16, "preserve
+  // envelope findings"), so the value is named for what it is.
   const input = "Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz0123456789AB";
   const out = pipeline(input);
-  assert.ok(out.includes("Bearer [REDACTED:bearer_token]"), out);
-  assert.ok(!out.includes("[REDACTED:github_token]"), out);
+  assert.ok(out.includes("Bearer [REDACTED:github_token]"), out);
+  assert.ok(!out.includes("ghp_"), out);
 });
 
-check("overlap: env_var_secret wins over openai_key when capture spans key", () => {
+check("overlap: the specific openai_key wins over the generic env_var_secret", () => {
+  // Same rule as above: the generic KEY=value capture and the vendor key
+  // overlap on the value, and the vendor type is kept (core >= 0.9.3).
   const input = "OPENAI_API_KEY=sk-proj-abcdefghij0123456789ABCDEFGHIJ0123456789klmn";
   const out = pipeline(input);
-  // env_var_secret has a wider whole-match (starts at OPENAI_API_KEY, ends at value end),
-  // so it wins under the start-asc / longest-on-tie rule.
-  assert.ok(out.includes("OPENAI_API_KEY=[REDACTED:env_var_secret]"), out);
-  assert.ok(!out.includes("[REDACTED:openai_key]"), out);
+  assert.ok(out.includes("OPENAI_API_KEY=[REDACTED:openai_key]"), out);
+  assert.ok(!out.includes("sk-proj-"), out);
 });
 
 check("ordering: independent matches both applied", () => {

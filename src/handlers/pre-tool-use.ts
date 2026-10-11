@@ -36,9 +36,7 @@ export async function handlePreToolUse(
   }
 
   try {
-    // codex's GuardResult intentionally omits the `userMessage` field that core
-    // models. attachGuard never reads it, so widening here is behavior-safe.
-    attachGuard(payload, guard as Parameters<typeof attachGuard>[1]);
+    attachGuard(payload, guard);
     if (guard?.decision === "DENY") deferPayload(payload, config);
     else await sendPayload(payload, config);
   } catch (err) {

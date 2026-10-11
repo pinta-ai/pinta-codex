@@ -160,6 +160,32 @@ describe('PermissionRequest gate output', () => {
   });
 });
 
+describe('a refusal prefers the policy message over the rule id', () => {
+  // Parity with every other adaptor's PreToolUse gate: `userMessage` is the
+  // policy's own wording, `reason` is the rule id. Until 1.12.0 codex's guard
+  // binding dropped `userMessage`, so these gates alone showed the rule id
+  // (PTA-695).
+  const MESSAGE = 'Blocked by Pinta AI: piping a download into a shell is not allowed.';
+
+  it('PreToolUse shows userMessage when the manager sent one', async () => {
+    guardReplies({ decision: 'DENY', reason: 'deny_execution_pipe_to_shell', userMessage: MESSAGE, durationMs: 3 });
+    await handlePreToolUse(PRE_TOOL_USE, CONFIG);
+    expect(sole().hookSpecificOutput.permissionDecisionReason).toBe(MESSAGE);
+  });
+
+  it('PermissionRequest shows userMessage when the manager sent one', async () => {
+    guardReplies({ decision: 'DENY', reason: 'deny_execution_pipe_to_shell', userMessage: MESSAGE, durationMs: 3 });
+    await handlePermissionRequest(PERMISSION_REQUEST, CONFIG);
+    expect(sole().hookSpecificOutput.decision.message).toBe(MESSAGE);
+  });
+
+  it.each([['null', null], ['empty', ''], ['whitespace', '  ']])('falls back to the rule id when userMessage is %s', async (_label, userMessage) => {
+    guardReplies({ decision: 'DENY', reason: 'deny_execution_pipe_to_shell', userMessage, durationMs: 3 });
+    await handlePreToolUse(PRE_TOOL_USE, CONFIG);
+    expect(sole().hookSpecificOutput.permissionDecisionReason).toBe('deny_execution_pipe_to_shell');
+  });
+});
+
 describe('a refusal always says why', () => {
   // Both gates discard a reasonless refusal: codex rejects PreToolUse's
   // deny outright ("without a non-empty permissionDecisionReason"), and a

@@ -34,7 +34,7 @@ export async function handlePermissionRequest(
   }
 
   try {
-    attachGuard(payload, guard as Parameters<typeof attachGuard>[1]);
+    attachGuard(payload, guard);
     if (guard?.decision === "DENY") deferPayload(payload, config);
     else await sendPayload(payload, config);
   } catch (err) {
