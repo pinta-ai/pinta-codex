@@ -24,12 +24,25 @@ function fromTranscript(event: BaseEvent, now: number): ModelEvidence | undefine
   if (!session || !turn || at === undefined
     || (event.agent_id !== undefined && event.agent_id !== session)) return undefined;
 
-  const transcript = readTranscript(event.transcript_path);
+  // Walk back from the newest record. The turn's contexts are contiguous, so the scan
+  // ends at the first context of an earlier turn once this turn's have been seen.
+  let seen = false;
+  const transcript = readTranscript(event.transcript_path, {
+    needle: '"turn_context"',
+    done: (row) => {
+      if (row.type !== "turn_context") return false;
+      const time = timestamp(row.timestamp);
+      if (record(row.payload)?.turn_id === turn) seen ||= time !== undefined && time <= at;
+      else if (seen) return true;
+      return false;
+    },
+  });
   const first = transcript?.first;
   const started = timestamp(first?.timestamp);
   if (!transcript || first?.type !== "session_meta" || record(first.payload)?.id !== session
     || started === undefined || started > at) return undefined;
-  if (transcript.rows.some((row) => row.type === "session_meta" && record(row.payload)?.id !== session)) return undefined;
+  // A forked thread's file also holds copies of its parent's session_meta and turn contexts;
+  // only a context carrying this exact turn ID counts, and the header above pins the file.
 
   const candidates: Array<ModelEvidence | undefined> = [];
   for (const row of transcript.rows) {

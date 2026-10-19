@@ -2,6 +2,30 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.12.1] - 2026-10-19
+
+### Fixed
+
+- Tool-call spans (`PreToolUse`/`PostToolUse`) lost `codex.model` whenever the
+  host did not send one and the rollout fallback could not reach the turn's
+  `turn_context`. Codex writes that record once, at the start of a turn, and
+  the reader only looked at the last 1 MiB / 4,096 records of the file, so any
+  turn with more than that after its start (reasoning, command output) found
+  nothing. It now scans backwards up to 16 MiB, parsing only `turn_context`
+  lines, and stops at the first context of an earlier turn. The measured cost
+  is about 8 ms for a full 16 MiB scan.
+- A forked or sub-agent thread's rollout holds copies of its parent's
+  `session_meta`; the reader used to give up on any foreign `session_meta` in
+  the file. The header must still be this session's own, and only a
+  `turn_context` carrying this exact turn ID counts, so the copies are ignored.
+- A turn whose context was recorded twice with different models, far apart,
+  now yields no model instead of the later one. No source value is added:
+  `codex.model_source` stays `hook.model` or `transcript.turn_context`.
+
+### Compatibility
+
+- Guard payloads, event counts, envelope fields and redaction are unchanged.
+
 ## [1.12.0] - 2026-10-11
 
 ### Changed

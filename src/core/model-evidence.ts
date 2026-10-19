@@ -9,7 +9,8 @@ export interface ModelEvidence {
 
 const PLACEHOLDERS = new Set(["", "unknown", "undefined", "null", "n/a", "none", "auto", "default"]);
 export const TRANSCRIPT_PREFIX_BYTES = 256 * 1024;
-export const TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
+export const TRANSCRIPT_SCAN_BYTES = 16 * 1024 * 1024;
+const SCAN_CHUNK_BYTES = 1024 * 1024;
 const MAX_RECORDS = 4096;
 
 export function record(value: unknown): RecordValue | undefined {
@@ -54,14 +55,29 @@ export function eventTime(event: RecordValue, now: number): number | undefined {
 
 interface Transcript {
   first?: RecordValue;
+  /** Parsed records in file order; only the lines that contain `needle` when one is given. */
   rows: RecordValue[];
-  complete: boolean;
 }
 
-/** A fixed snapshot, not a cache: hooks run in fresh processes and models can change. */
-export function readTranscript(file: unknown): Transcript | undefined {
+interface Scan {
+  /** Only lines containing this text are parsed; other lines are skipped unread. */
+  needle?: string;
+  /** Called newest-first on each parsed record; true ends the scan (the record is kept). */
+  done?: (row: RecordValue) => boolean;
+}
+
+/**
+ * A fixed snapshot, not a cache: hooks run in fresh processes and models can change.
+ *
+ * The file is read backwards in chunks, newest lines first, and at most
+ * TRANSCRIPT_SCAN_BYTES of it. A turn's `turn_context` is written once at the
+ * start of the turn, so after a long agentic turn (reasoning, command output) it
+ * sits megabytes behind the end of the file; a fixed small tail never reaches it.
+ */
+export function readTranscript(file: unknown, scan: Scan = {}): Transcript | undefined {
   if (typeof file !== "string" || file.length > 4096 || /[\u0000-\u001f]/.test(file)
     || !path.isAbsolute(file) || path.extname(file) !== ".jsonl") return undefined;
+  const needle = scan.needle ? Buffer.from(scan.needle) : undefined;
   let fd: number | undefined;
   try {
     // Nonblocking open + regular-file check also make FIFOs/devices harmless.
@@ -75,31 +91,51 @@ export function readTranscript(file: unknown): Transcript | undefined {
     if (firstNewline >= 0) {
       try { first = record(JSON.parse(prefix.toString("utf8", 0, firstNewline))); } catch { /* unavailable header */ }
     }
-    const start = Math.max(0, stat.size - TRANSCRIPT_TAIL_BYTES);
-    const tail = stat.size <= prefix.length ? prefix : Buffer.alloc(stat.size - start);
-    if (tail !== prefix && fs.readSync(fd, tail, 0, tail.length, start) !== tail.length) return undefined;
+
+    const floor = Math.max(0, stat.size - TRANSCRIPT_SCAN_BYTES);
+    const rows: RecordValue[] = [];
+    let position = stat.size;
+    let carry = Buffer.alloc(0); // start of a line whose beginning is not read yet
+    let uncommitted = true; // bytes after the last newline are still being appended
+    let stopped = false;
+    const take = (data: Buffer, from: number, to: number) => {
+      if (to <= from || (needle && !data.subarray(from, to).includes(needle))) return;
+      const line = data.toString("utf8", from, to).trim();
+      if (!line) return;
+      const parsed = record(JSON.parse(line));
+      if (!parsed) return;
+      rows.push(parsed);
+      if (rows.length >= MAX_RECORDS || scan.done?.(parsed)) stopped = true;
+    };
+    while (position > floor && !stopped) {
+      const size = Math.min(SCAN_CHUNK_BYTES, position - floor);
+      position -= size;
+      const chunk = Buffer.alloc(size);
+      if (fs.readSync(fd, chunk, 0, size, position) !== size) return undefined;
+      const data = carry.length ? Buffer.concat([chunk, carry]) : chunk;
+      let end = data.length;
+      if (uncommitted) {
+        // Discard the final fragment, even a parseable one: it may still be being appended.
+        end = data.lastIndexOf(10);
+        if (end < 0) { carry = data; continue; }
+        uncommitted = false;
+      }
+      while (end > 0 && !stopped) {
+        const previous = data.lastIndexOf(10, end - 1);
+        if (previous < 0) break;
+        take(data, previous + 1, end);
+        end = previous;
+      }
+      carry = Buffer.from(data.subarray(0, end));
+    }
+    // The first line of the file is whole; the first line of a bounded window is a fragment.
+    if (position === 0 && !uncommitted && !stopped) take(carry, 0, carry.length);
+
+    if (uncommitted) return undefined; // no complete line at all
     const after = fs.fstatSync(fd);
     if (after.size < stat.size || (after.size === stat.size && after.mtimeMs !== stat.mtimeMs)) return undefined;
-
-    // Discard boundary fragments, even a parseable last line: it may still be being appended.
-    const begin = start > 0 ? tail.indexOf(10) + 1 : 0;
-    let end = tail.lastIndexOf(10);
-    if ((start > 0 && begin === 0) || end < begin) return undefined;
-    const rows: RecordValue[] = [];
-    let lines = 0;
-    while (end > begin && lines < MAX_RECORDS) {
-      const previous = tail.lastIndexOf(10, end - 1);
-      const lineStart = Math.max(begin, previous + 1);
-      const line = tail.toString("utf8", lineStart, end).trim();
-      if (line) {
-        const parsed = record(JSON.parse(line));
-        if (parsed) rows.push(parsed);
-      }
-      end = lineStart - 1;
-      lines++;
-    }
     rows.reverse();
-    return { first, rows, complete: start === 0 && end < 0 && tail[tail.length - 1] === 10 };
+    return { first, rows };
   } catch {
     // Never log paths or transcript contents, and never let enrichment fail a hook.
     return undefined;

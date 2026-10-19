@@ -163,8 +163,11 @@ The original input, other flattened fields, guard behavior, event count and
 redaction pipeline are unchanged.
 
 Model lookup opens only the supplied absolute `.jsonl` regular file, read-only,
-with no subprocess, directory scan or model cache. It reads at most a 256 KiB
-header plus a 1 MiB tail and 4,096 complete records. Missing/unreadable files,
+with no subprocess, directory scan or model cache. It reads a 256 KiB
+header, then scans the last 16 MiB backwards (1 MiB at a time) and parses only
+the `turn_context` lines, at most 4,096 of them, stopping at the first context
+of an earlier turn. A turn's context is written once, when the turn starts, so
+a long turn pushes it far behind the end of the file. Missing/unreadable files,
 leaf symlinks, malformed records and invalid identities fail quietly;
 incomplete boundary lines are ignored. It never logs or exports transcript
 contents. An explicit model or missing turn ID needs no model-lookup IO.
