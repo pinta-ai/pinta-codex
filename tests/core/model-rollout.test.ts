@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveModel } from "../../src/core/model";
 import type { BaseEvent } from "../../src/core/types";
 
@@ -110,6 +110,33 @@ describe("model from a real-shaped Codex rollout", () => {
     write([sessionMeta(), turnContext("model-a", earlier), ...step(1, 500), turnContext("model-b"), ...step(2, 500)]);
     expect(model({ turn_id: earlier })?.name).toBe("model-a");
     expect(model()?.name).toBe("model-b");
+  });
+
+  it("steps over a single record far larger than a read chunk without re-copying it", () => {
+    const huge = line("response_item", { type: "function_call_output", call_id: "c", output: "o".repeat(11 * 1024 * 1024) });
+    write([sessionMeta(), turnContext("gpt-5-codex"), ...step(1, 500), huge, ...step(2, 500)]);
+    const concat = vi.spyOn(Buffer, "concat");
+    expect(model()).toEqual({ name: "gpt-5-codex", source: "transcript.turn_context" });
+    const copied = concat.mock.calls.reduce((sum, [list]) => sum + list.reduce((n, part) => n + part.length, 0), 0);
+    expect(copied).toBeLessThan(8 * 1024 * 1024); // growing a carry across 11 chunks would copy ~66 MiB
+    // A huge half-written last record is not committed and is not copied around either.
+    fs.appendFileSync(file, "x".repeat(3 * 1024 * 1024));
+    concat.mockClear();
+    expect(model()).toEqual({ name: "gpt-5-codex", source: "transcript.turn_context" });
+    expect(concat.mock.calls.reduce((sum, [list]) => sum + list.reduce((n, part) => n + part.length, 0), 0)).toBeLessThan(8 * 1024 * 1024);
+    concat.mockRestore();
+  });
+
+  it("fixes the result when an earlier turn's context sits between two contexts of this turn", () => {
+    const earlier = "0199d4f2-0000-7000-8000-000000000001";
+    // Scanning back: this turn's last context is seen, then the earlier turn's ends the scan.
+    // Contexts of one turn are written together, so an earlier turn between them is not
+    // expected; if it ever happens the older context is not read and the result is the
+    // newest one alone, never a model from the other turn.
+    write([sessionMeta(), turnContext("model-a"), turnContext("model-x", earlier), turnContext("model-a"), ...step(1, 500)]);
+    expect(model()).toEqual({ name: "model-a", source: "transcript.turn_context" });
+    write([sessionMeta(), turnContext("model-b"), turnContext("model-x", earlier), turnContext("model-a"), ...step(1, 500)]);
+    expect(model()?.name).toBe("model-a");
   });
 
   it("accepts the same model recorded again in the same turn", () => {

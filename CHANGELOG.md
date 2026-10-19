@@ -6,21 +6,27 @@ All notable changes to pinta-codex are documented here.
 
 ### Fixed
 
-- Tool-call spans (`PreToolUse`/`PostToolUse`) lost `codex.model` whenever the
-  host did not send one and the rollout fallback could not reach the turn's
-  `turn_context`. Codex writes that record once, at the start of a turn, and
-  the reader only looked at the last 1 MiB / 4,096 records of the file, so any
-  turn with more than that after its start (reasoning, command output) found
-  nothing. It now scans backwards up to 16 MiB, parsing only `turn_context`
-  lines, and stops at the first context of an earlier turn. The measured cost
-  is about 8 ms for a full 16 MiB scan.
-- A forked or sub-agent thread's rollout holds copies of its parent's
-  `session_meta`; the reader used to give up on any foreign `session_meta` in
-  the file. The header must still be this session's own, and only a
-  `turn_context` carrying this exact turn ID counts, so the copies are ignored.
-- A turn whose context was recorded twice with different models, far apart,
-  now yields no model instead of the later one. No source value is added:
-  `codex.model_source` stays `hook.model` or `transcript.turn_context`.
+- Hardening of the rollout-file fallback for hosts that send no `model` on a
+  tool hook. **The cause of the 0 of 107 `codex.model` on 1.10.0 tool rows
+  (stage, 2026-09-28) is not confirmed.** Upstream Codex always sends `model`
+  on `PreToolUse`/`PostToolUse` (`codex-rs/hooks/src/schema.rs`) and the
+  adapter reads it first, so this release is not expected to change what stage
+  measures for those rows. Three ways the fallback came back empty or wrong,
+  each reproduced with Codex's rollout record shapes:
+  - Codex writes a turn's `turn_context` once, at the start of the turn, and
+    the reader only looked at the last 1 MiB / 4,096 records of the file, so a
+    turn with more than that after its start (reasoning, command output) found
+    nothing. It now scans backwards up to 16 MiB, parsing only `turn_context`
+    lines, stepping over single records larger than a read chunk, and stops at
+    the first context of an earlier turn (about 8 ms for a full scan).
+  - A forked or sub-agent thread's rollout holds copies of its parent's
+    `session_meta`; the reader gave up on any foreign `session_meta`. The header
+    must still be this session's own and only a `turn_context` with this exact
+    turn ID counts, so the copies are ignored.
+  - A turn whose context was recorded twice with different models, far apart,
+    returned the later model; it now returns none.
+  No new `codex.model_source` value: it stays `hook.model` or
+  `transcript.turn_context`.
 
 ### Compatibility
 

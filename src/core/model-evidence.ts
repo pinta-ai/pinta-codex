@@ -97,6 +97,7 @@ export function readTranscript(file: unknown, scan: Scan = {}): Transcript | und
     let position = stat.size;
     let carry = Buffer.alloc(0); // start of a line whose beginning is not read yet
     let uncommitted = true; // bytes after the last newline are still being appended
+    let skipping = false; // inside a line longer than a chunk: not a record we want, not worth copying
     let stopped = false;
     const take = (data: Buffer, from: number, to: number) => {
       if (to <= from || (needle && !data.subarray(from, to).includes(needle))) return;
@@ -114,10 +115,15 @@ export function readTranscript(file: unknown, scan: Scan = {}): Transcript | und
       if (fs.readSync(fd, chunk, 0, size, position) !== size) return undefined;
       const data = carry.length ? Buffer.concat([chunk, carry]) : chunk;
       let end = data.length;
+      if (skipping) {
+        end = data.lastIndexOf(10); // the long line starts after this newline
+        if (end < 0) continue;
+        skipping = false;
+      }
       if (uncommitted) {
         // Discard the final fragment, even a parseable one: it may still be being appended.
         end = data.lastIndexOf(10);
-        if (end < 0) { carry = data; continue; }
+        if (end < 0) { carry = data.length > SCAN_CHUNK_BYTES ? Buffer.alloc(0) : data; continue; }
         uncommitted = false;
       }
       while (end > 0 && !stopped) {
@@ -126,10 +132,12 @@ export function readTranscript(file: unknown, scan: Scan = {}): Transcript | und
         take(data, previous + 1, end);
         end = previous;
       }
-      carry = Buffer.from(data.subarray(0, end));
+      // Without this a single huge line (tool output) would be re-copied with every chunk.
+      skipping = end > SCAN_CHUNK_BYTES;
+      carry = skipping ? Buffer.alloc(0) : Buffer.from(data.subarray(0, end));
     }
     // The first line of the file is whole; the first line of a bounded window is a fragment.
-    if (position === 0 && !uncommitted && !stopped) take(carry, 0, carry.length);
+    if (position === 0 && !uncommitted && !stopped && !skipping) take(carry, 0, carry.length);
 
     if (uncommitted) return undefined; // no complete line at all
     const after = fs.fstatSync(fd);
