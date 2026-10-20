@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  modelName, readTranscript, TRANSCRIPT_PREFIX_BYTES, TRANSCRIPT_TAIL_BYTES,
+  modelName, readTranscript, TRANSCRIPT_PREFIX_BYTES, TRANSCRIPT_SCAN_BYTES,
 } from "../../src/core/model-evidence";
 
 let directory: string;
@@ -45,21 +45,19 @@ describe("bounded model evidence reader", () => {
     const original = '{"one":1}\n{"two":2}\n';
     fs.writeFileSync(file, original, { mode: 0o400 });
     const open = vi.spyOn(fs, "openSync");
-    expect(readTranscript(file)).toEqual({ first: { one: 1 }, rows: [{ one: 1 }, { two: 2 }], complete: true });
+    expect(readTranscript(file)).toEqual({ first: { one: 1 }, rows: [{ one: 1 }, { two: 2 }] });
     expect(fs.readFileSync(file, "utf8")).toBe(original);
     expect(Number(open.mock.calls[0][1]) & fs.constants.O_NONBLOCK).toBe(fs.constants.O_NONBLOCK);
   });
 
   it("bounds bytes and skips an oversized boundary record, including split UTF-8", () => {
-    fs.writeFileSync(file, '{"header":true}\n' + JSON.stringify({ content: "é".repeat(TRANSCRIPT_TAIL_BYTES) }) + '\n{"model":"tail-model"}\n');
+    fs.writeFileSync(file, '{"header":true}\n' + JSON.stringify({ content: "é".repeat(TRANSCRIPT_SCAN_BYTES) }) + '\n{"model":"tail-model"}\n');
     const read = vi.spyOn(fs, "readSync");
     const result = readTranscript(file);
     expect(result?.first).toEqual({ header: true });
     expect(result?.rows).toEqual([{ model: "tail-model" }]);
-    expect(result?.complete).toBe(false);
     const bytes = read.mock.calls.reduce((sum, call) => sum + Number(call[3]), 0);
-    expect(bytes).toBeLessThanOrEqual(TRANSCRIPT_PREFIX_BYTES + TRANSCRIPT_TAIL_BYTES);
-    expect(read.mock.calls).toHaveLength(2);
+    expect(bytes).toBeLessThanOrEqual(TRANSCRIPT_PREFIX_BYTES + TRANSCRIPT_SCAN_BYTES);
   });
 
   it("bounds parsed records as well as bytes", () => {
@@ -67,12 +65,25 @@ describe("bounded model evidence reader", () => {
     const result = readTranscript(file);
     expect(result?.rows).toHaveLength(4096);
     expect(result?.rows[0]).toEqual({ n: 904 });
-    expect(result?.complete).toBe(false);
+  });
+
+  it("parses only lines holding the needle, including lines that straddle read chunks", () => {
+    const rows = Array.from({ length: 24 }, (_, n) => ({ n, kind: n % 3 === 0 ? "wanted" : "other", pad: "x".repeat(300_000 + n) }));
+    fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+    const result = readTranscript(file, { needle: '"wanted"' });
+    expect(result?.rows.map((row) => row.n)).toEqual([0, 3, 6, 9, 12, 15, 18, 21]);
+    expect(result?.first).toBeUndefined(); // the first line is over the header prefix
+  });
+
+  it("stops at the first record the caller is done with, newest first", () => {
+    fs.writeFileSync(file, [1, 2, 3, 4, 5].map((n) => JSON.stringify({ n })).join("\n") + "\n");
+    const result = readTranscript(file, { done: (row) => row.n === 3 });
+    expect(result?.rows.map((row) => row.n)).toEqual([3, 4, 5]);
   });
 
   it("never treats an uncommitted final line as evidence", () => {
     fs.writeFileSync(file, '{"complete":true}\n{"model":"not-committed"}');
-    expect(readTranscript(file)).toEqual({ first: { complete: true }, rows: [{ complete: true }], complete: false });
+    expect(readTranscript(file)).toEqual({ first: { complete: true }, rows: [{ complete: true }] });
     fs.writeFileSync(file, '{"model":"not-committed"}');
     expect(readTranscript(file)).toBeUndefined();
   });

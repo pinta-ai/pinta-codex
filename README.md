@@ -139,6 +139,10 @@ Provider and requested/response fields remain unchanged. If a transcript
 replaces an unusable model, `model_source` describes that transcript evidence;
 a previous host source is retained as `codex.model_original_source`.
 
+Upstream Codex always sends `model` on `PreToolUse`/`PostToolUse`
+(`codex-rs/hooks/src/schema.rs`), so the rollout fallback below only matters
+for hosts or builds that do not.
+
 When the hook has no usable model, `transcript.turn_context` evidence is
 available only with an exact `session_meta.payload.id == session_id` and
 `turn_context.payload.turn_id == turn_id` in the supplied rollout JSONL.
@@ -163,8 +167,11 @@ The original input, other flattened fields, guard behavior, event count and
 redaction pipeline are unchanged.
 
 Model lookup opens only the supplied absolute `.jsonl` regular file, read-only,
-with no subprocess, directory scan or model cache. It reads at most a 256 KiB
-header plus a 1 MiB tail and 4,096 complete records. Missing/unreadable files,
+with no subprocess, directory scan or model cache. It reads a 256 KiB
+header, then scans the last 16 MiB backwards (1 MiB at a time) and parses only
+the `turn_context` lines, at most 4,096 of them, stopping at the first context
+of an earlier turn. A turn's context is written once, when the turn starts, so
+a long turn pushes it far behind the end of the file. Missing/unreadable files,
 leaf symlinks, malformed records and invalid identities fail quietly;
 incomplete boundary lines are ignored. It never logs or exports transcript
 contents. An explicit model or missing turn ID needs no model-lookup IO.

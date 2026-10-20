@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildOtlpPayload } from "../../src/core/otlp";
 import { resolveModel } from "../../src/core/model";
+import { TRANSCRIPT_SCAN_BYTES } from "../../src/core/model-evidence";
 import type { BaseEvent } from "../../src/core/types";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
@@ -173,8 +174,8 @@ describe("model evidence", () => {
     expect(value(attributes(), "model")).toBeUndefined();
   });
 
-  it("does not substitute a recent context when the requested turn is outside the bounded tail", () => {
-    write([header(), context("old"), { content: "x".repeat(2 * 1024 * 1024) }, context("recent", "turn-2")]);
+  it("does not substitute a recent context when the requested turn is outside the bounded scan", () => {
+    write([header(), context("old"), { content: "x".repeat(TRANSCRIPT_SCAN_BYTES + 1024 * 1024) }, context("recent", "turn-2")]);
     expect(value(attributes(), "model")).toBeUndefined();
     expect(value(attributes({ turn_id: "turn-2" }), "model")).toEqual({ stringValue: "recent" });
   });
