@@ -1,6 +1,6 @@
 {
   "name": "@pinta-ai/pinta-codex",
-  "version": "1.12.2",
+  "version": "1.12.3-pta1010.1",
   "description": "Generic OTLP forwarder for Codex hook events",
   "main": "dist/index.js",
   "exports": {
@@ -25,6 +25,7 @@
     "hooks.json",
     "tools",
     "LICENSE",
+    "LICENSE-ACORN",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -49,7 +50,7 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@pinta-ai/core": "^0.11.0",
+    "@pinta-ai/core": "0.11.1-pta1010.1",
     "@types/node": "^22.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0",

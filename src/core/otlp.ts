@@ -170,6 +170,7 @@ const BASH_CONTEXT_KEYS: ReadonlySet<string> = new Set([
 const ATTR_POLICY: AttrPolicy = {
   skipRedactKeys: SKIP_REDACT_KEYS,
   bashContextKeys: BASH_CONTEXT_KEYS,
+  outputForKey: (key, value) => key === "codex.tool_response" ? value : undefined,
 };
 
 function flattenEvent(event: BaseEvent, now: number): OtlpAttribute[] {

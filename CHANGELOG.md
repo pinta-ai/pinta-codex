@@ -2,6 +2,18 @@
 
 All notable changes to pinta-codex are documented here.
 
+## [1.12.3-pta1010.1] - 2026-11-26
+
+### Fixed
+
+- Bundle Core `0.11.1-pta1010.1` for bounded Fetch-mode and CLI-option semantics
+  and OpenAI-key token boundaries, with the Acorn MIT notice.
+- Keep returned credentials separate from completed inputs so tool-output
+  inspection can still deny actual secrets. Unknown consumers, real passwords
+  and existing output-denial behavior remain protected.
+- This prerelease requires explicit compatible Stage catalog approval; stable
+  selection and the existing model-attribution fallback are preserved.
+
 ## [1.12.2] - 2026-10-20
 
 ### Fixed
