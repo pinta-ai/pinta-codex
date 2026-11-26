@@ -3,6 +3,26 @@ import { describe, it, expect } from 'vitest';
 import { buildOtlpPayload } from '../../src/core/otlp';
 
 describe('buildOtlpPayload (v1.2.0 — generic)', () => {
+  it('separates returned secrets from completed inputs', () => {
+    const inputKey = `sk-${'FAKE0'.repeat(9)}input`;
+    const outputKey = `sk-${'FAKE0'.repeat(9)}output`;
+    const payload = buildOtlpPayload({
+      event: {
+        hook_event_name: 'PostToolUse', session_id: 'credential-scope',
+        tool_name: 'Read', tool_input: { note: inputKey }, tool_response: { stdout: outputKey },
+      },
+      traceId: '01HQXM7Y9YZJ8MK7Z6P3X1V8R0',
+    });
+    const encoded = payload.resourceSpans[0].scopeSpans[0].spans[0].attributes.find((a) => a.key === 'pinta.facts');
+    const facts = JSON.parse(String(Object.values(encoded?.value ?? {})[0]));
+    expect(facts.items).toMatchObject([
+      { secrets: { count: 1, origins: ['attributes'] } },
+      { secrets: { count: 1, origins: ['toolOutput'] } },
+    ]);
+    expect(JSON.stringify(payload)).not.toContain(inputKey);
+    expect(JSON.stringify(payload)).not.toContain(outputKey);
+  });
+
   it('produces resourceSpans with one span per call', () => {
     const payload = buildOtlpPayload({
       event: {
